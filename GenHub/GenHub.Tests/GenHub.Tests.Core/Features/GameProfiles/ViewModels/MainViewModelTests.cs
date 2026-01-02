@@ -13,6 +13,7 @@ using GenHub.Core.Interfaces.Shortcuts;
 using GenHub.Core.Interfaces.Steam;
 using GenHub.Core.Interfaces.Storage;
 using GenHub.Core.Interfaces.Tools;
+using GenHub.Core.Interfaces.UserData;
 using GenHub.Core.Interfaces.Workspace;
 using GenHub.Core.Models.Common;
 using GenHub.Core.Models.Enums;
@@ -55,10 +56,16 @@ public class MainViewModelTests
         var mockNotificationService = CreateNotificationServiceMock();
         var mockNotificationManager = new Mock<NotificationManagerViewModel>(
             mockNotificationService.Object,
-            Mock.Of<ILogger<NotificationManagerViewModel>>(),
-            Mock.Of<ILogger<NotificationItemViewModel>>());
+            NullLogger<NotificationManagerViewModel>.Instance,
+            NullLogger<NotificationItemViewModel>.Instance);
 
         // Act
+        // Act
+        var notificationFeedVm = new NotificationFeedViewModel(
+            mockNotificationService.Object,
+            NullLoggerFactory.Instance,
+            NullLogger<NotificationFeedViewModel>.Instance);
+
         var vm = new MainViewModel(
             CreateGameProfileLauncherViewModel(),
             CreateDownloadsViewModel(),
@@ -72,6 +79,7 @@ public class MainViewModelTests
             mockVelopackUpdateManager.Object,
             CreateProfileResourceService(),
             mockNotificationService.Object,
+            notificationFeedVm,
             mockLogger.Object);
 
         // Assert
@@ -100,8 +108,13 @@ public class MainViewModelTests
         var mockNotificationService = CreateNotificationServiceMock();
         var mockNotificationManager = new Mock<NotificationManagerViewModel>(
             mockNotificationService.Object,
-            Mock.Of<ILogger<NotificationManagerViewModel>>(),
-            Mock.Of<ILogger<NotificationItemViewModel>>());
+            NullLogger<NotificationManagerViewModel>.Instance,
+            NullLogger<NotificationItemViewModel>.Instance);
+        var notificationFeedVm = new NotificationFeedViewModel(
+            mockNotificationService.Object,
+            NullLoggerFactory.Instance,
+            NullLogger<NotificationFeedViewModel>.Instance);
+
         var vm = new MainViewModel(
             CreateGameProfileLauncherViewModel(),
             CreateDownloadsViewModel(),
@@ -115,6 +128,7 @@ public class MainViewModelTests
             mockVelopackUpdateManager.Object,
             CreateProfileResourceService(),
             mockNotificationService.Object,
+            notificationFeedVm,
             mockLogger.Object);
         vm.SelectTabCommand.Execute(tab);
         Assert.Equal(tab, vm.SelectedTab);
@@ -142,6 +156,11 @@ public class MainViewModelTests
             mockNotificationService.Object,
             Mock.Of<ILogger<NotificationManagerViewModel>>(),
             Mock.Of<ILogger<NotificationItemViewModel>>());
+        var notificationFeedVm = new NotificationFeedViewModel(
+            mockNotificationService.Object,
+            Mock.Of<ILoggerFactory>(),
+            Mock.Of<ILogger<NotificationFeedViewModel>>());
+
         var vm = new MainViewModel(
             CreateGameProfileLauncherViewModel(),
             CreateDownloadsViewModel(),
@@ -155,6 +174,7 @@ public class MainViewModelTests
             mockVelopackUpdateManager.Object,
             CreateProfileResourceService(),
             mockNotificationService.Object,
+            notificationFeedVm,
             mockLogger.Object);
         await vm.InitializeAsync(); // Should not throw
         Assert.True(true);
@@ -183,6 +203,11 @@ public class MainViewModelTests
             mockNotificationService.Object,
             Mock.Of<ILogger<NotificationManagerViewModel>>(),
             Mock.Of<ILogger<NotificationItemViewModel>>());
+        var notificationFeedVm = new NotificationFeedViewModel(
+            mockNotificationService.Object,
+            Mock.Of<ILoggerFactory>(),
+            Mock.Of<ILogger<NotificationFeedViewModel>>());
+
         var vm = new MainViewModel(
             CreateGameProfileLauncherViewModel(),
             CreateDownloadsViewModel(),
@@ -196,6 +221,7 @@ public class MainViewModelTests
             mockVelopackUpdateManager.Object,
             CreateProfileResourceService(),
             mockNotificationService.Object,
+            notificationFeedVm,
             mockLogger.Object);
         vm.SelectTabCommand.Execute(tab);
         var currentViewModel = vm.CurrentTabViewModel;
@@ -365,6 +391,7 @@ public class MainViewModelTests
     {
         var mock = new Mock<INotificationService>();
         mock.Setup(x => x.Notifications).Returns(Observable.Empty<NotificationMessage>());
+        mock.Setup(x => x.NotificationHistory).Returns(Observable.Empty<NotificationMessage>());
         mock.Setup(x => x.DismissRequests).Returns(Observable.Empty<Guid>());
         mock.Setup(x => x.DismissAllRequests).Returns(Observable.Empty<bool>());
         return mock;

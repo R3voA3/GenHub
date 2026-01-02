@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +40,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IVelopackUpdateManager _velopackUpdateManager;
     private readonly ProfileResourceService _profileResourceService;
     private readonly INotificationService _notificationService;
+    private readonly NotificationFeedViewModel _notificationFeedViewModel;
     private readonly CancellationTokenSource _initializationCts = new();
 
     [ObservableProperty]
@@ -59,6 +61,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// <param name="velopackUpdateManager">The Velopack update manager for checking updates.</param>
     /// <param name="profileResourceService">Service for accessing profile resources.</param>
     /// <param name="notificationService">Service for showing notifications.</param>
+    /// <param name="notificationFeedViewModel">Notification feed view model.</param>
     /// <param name="logger">Logger instance.</param>
     public MainViewModel(
         GameProfileLauncherViewModel gameProfilesViewModel,
@@ -73,6 +76,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         IVelopackUpdateManager velopackUpdateManager,
         ProfileResourceService profileResourceService,
         INotificationService notificationService,
+        NotificationFeedViewModel notificationFeedViewModel,
         ILogger<MainViewModel>? logger = null)
     {
         GameProfilesViewModel = gameProfilesViewModel;
@@ -87,6 +91,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _velopackUpdateManager = velopackUpdateManager ?? throw new ArgumentNullException(nameof(velopackUpdateManager));
         _profileResourceService = profileResourceService ?? throw new ArgumentNullException(nameof(profileResourceService));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _notificationFeedViewModel = notificationFeedViewModel ?? throw new ArgumentNullException(nameof(notificationFeedViewModel));
         _logger = logger;
 
         // Load initial settings using unified configuration
@@ -133,6 +138,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// Gets the notification manager view model.
     /// </summary>
     public NotificationManagerViewModel NotificationManager { get; }
+
+    /// <summary>
+    /// Gets the notification feed view model.
+    /// </summary>
+    public NotificationFeedViewModel NotificationFeed => _notificationFeedViewModel;
 
     /// <summary>
     /// Gets the collection of detected game installations.
@@ -241,8 +251,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
                             "Update Available",
                             $"A new version ({updateInfo.TargetFullRelease.Version}) is available.",
                             null, // Persistent
-                            "View Updates",
-                            () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); }));
+                            actions: new List<NotificationAction>
+                            {
+                                new NotificationAction(
+                                    "View Updates",
+                                    () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); },
+                                    NotificationActionStyle.Primary,
+                                    dismissOnExecute: true),
+                            }));
                     });
                     return;
                 }
@@ -267,8 +283,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
                             "Branch Update Available",
                             $"A new build ({newVersionBase}) is available on branch '{settings.SubscribedBranch}'.",
                             null, // Persistent
-                            "View Updates",
-                            () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); }));
+                            actions: new List<NotificationAction>
+                            {
+                                new NotificationAction(
+                                    "View Updates",
+                                    () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); },
+                                    NotificationActionStyle.Primary,
+                                    dismissOnExecute: true),
+                            }));
                     });
                 }
             }

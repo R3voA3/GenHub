@@ -476,7 +476,7 @@ public class GameClientDetector(
     /// <summary>
     /// Detects publisher game clients from local files for publishers not yet handled from the pool.
     /// </summary>
-    private async Task DetectPublisherClientsFromLocalFilesAsync(
+    private Task DetectPublisherClientsFromLocalFilesAsync(
         GameInstallation installation,
         string installationPath,
         GameType gameType,
@@ -532,6 +532,8 @@ public class GameClientDetector(
                 }
             }
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -548,7 +550,7 @@ public class GameClientDetector(
     /// which can invalidate hash verification. For now, we detect by filename only
     /// and skip hash validation until a dedicated publisher system is implemented.
     /// </remarks>
-    private async Task<List<GameClient>> DetectGeneralsOnlineClientsAsync(
+    private Task<List<GameClient>> DetectGeneralsOnlineClientsAsync(
         GameInstallation installation,
         GameType gameType)
     {
@@ -557,11 +559,11 @@ public class GameClientDetector(
 
         if (string.IsNullOrEmpty(installationPath) || !Directory.Exists(installationPath))
         {
-            return detectedClients;
+            return Task.FromResult(detectedClients);
         }
 
         // GeneralsOnline clients auto-update, so we use a fixed version string
-        const string generalsOnlineVersion = "Automatically added";
+        const string generalsOnlineVersion = GameClientConstants.UnknownVersion;
 
         var generalsOnlineExecutables = GameClientConstants.GeneralsOnlineExecutableNames;
 
@@ -639,7 +641,7 @@ public class GameClientDetector(
                 installationPath);
         }
 
-        return detectedClients;
+        return Task.FromResult(detectedClients);
     }
 
     /// <summary>
