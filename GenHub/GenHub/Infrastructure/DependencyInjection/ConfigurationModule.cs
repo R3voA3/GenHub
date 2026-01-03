@@ -33,6 +33,7 @@ public static class ConfigurationModule
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
                 .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production"}.json", optional: true)
+                .AddEnvironmentVariables()
                 .AddEnvironmentVariables("GENHUB_");
 
             return builder.Build();

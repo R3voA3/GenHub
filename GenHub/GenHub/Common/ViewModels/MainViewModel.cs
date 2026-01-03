@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,22 +30,9 @@ using Microsoft.Extensions.Logging;
 namespace GenHub.Common.ViewModels;
 
 /// <summary>
-/// Initializes a new instance of the <see cref="MainViewModel"/> class.
+/// Main ViewModel for the application shell.
+/// Orchestrates navigation and shared application state.
 /// </summary>
-/// <param name="gameProfilesViewModel">Game profiles view model.</param>
-/// <param name="downloadsViewModel">Downloads view model.</param>
-/// <param name="toolsViewModel">Tools view model.</param>
-/// <param name="settingsViewModel">Settings view model.</param>
-/// <param name="notificationManager">Notification manager view model.</param>
-/// <param name="generalsOnlineViewModel">Generals Online view model.</param>
-/// <param name="gameInstallationDetectionOrchestrator">Game installation orchestrator.</param>
-/// <param name="configurationProvider">Configuration provider service.</param>
-/// <param name="userSettingsService">User settings service for persistence operations.</param>
-/// <param name="profileEditorFacade">Profile editor facade for automatic profile creation.</param>
-/// <param name="velopackUpdateManager">The Velopack update manager for checking updates.</param>
-/// <param name="profileResourceService">Service for accessing profile resources.</param>
-/// <param name="generalsOnlineAuthService">Generals Online authentication service.</param>
-/// <param name="logger">Logger instance.</param>
 public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly CancellationTokenSource _initializationCts = new();
@@ -56,12 +44,72 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ProfileResourceService _profileResourceService;
     private readonly IGeneralsOnlineAuthService _generalsOnlineAuthService;
     private readonly ILogger<MainViewModel>? _logger;
+    private readonly INotificationService _notificationService;
+    private readonly NotificationFeedViewModel _notificationFeedViewModel;
 
     [ObservableProperty]
     private NavigationTab _selectedTab;
 
     [ObservableProperty]
     private bool _hasUpdateAvailable;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MainViewModel"/> class.
+    /// </summary>
+    /// <param name="gameProfilesViewModel">Game profiles view model.</param>
+    /// <param name="downloadsViewModel">Downloads view model.</param>
+    /// <param name="toolsViewModel">Tools view model.</param>
+    /// <param name="settingsViewModel">Settings view model.</param>
+    /// <param name="notificationManager">Notification manager view model.</param>
+    /// <param name="generalsOnlineViewModel">Generals Online view model.</param>
+    /// <param name="gameInstallationDetectionOrchestrator">Game installation orchestrator.</param>
+    /// <param name="configurationProvider">Configuration provider service.</param>
+    /// <param name="userSettingsService">User settings service for persistence operations.</param>
+    /// <param name="profileEditorFacade">Profile editor facade for automatic profile creation.</param>
+    /// <param name="velopackUpdateManager">The Velopack update manager for checking updates.</param>
+    /// <param name="profileResourceService">Service for accessing profile resources.</param>
+    /// <param name="notificationService">Service for showing notifications.</param>
+    /// <param name="notificationFeedViewModel">Notification feed view model.</param>
+    /// <param name="generalsOnlineAuthService">Generals Online authentication service.</param>
+    /// <param name="logger">Logger instance.</param>
+    public MainViewModel(
+        GameProfileLauncherViewModel gameProfilesViewModel,
+        DownloadsViewModel downloadsViewModel,
+        ToolsViewModel toolsViewModel,
+        SettingsViewModel settingsViewModel,
+        NotificationManagerViewModel notificationManager,
+        GeneralsOnlineViewModel generalsOnlineViewModel,
+        IGameInstallationDetectionOrchestrator gameInstallationDetectionOrchestrator,
+        IConfigurationProviderService configurationProvider,
+        IUserSettingsService userSettingsService,
+        IProfileEditorFacade profileEditorFacade,
+        IVelopackUpdateManager velopackUpdateManager,
+        ProfileResourceService profileResourceService,
+        INotificationService notificationService,
+        NotificationFeedViewModel notificationFeedViewModel,
+        IGeneralsOnlineAuthService generalsOnlineAuthService,
+        ILogger<MainViewModel>? logger = null)
+    {
+        GameProfilesViewModel = gameProfilesViewModel;
+        DownloadsViewModel = downloadsViewModel;
+        ToolsViewModel = toolsViewModel;
+        SettingsViewModel = settingsViewModel;
+        NotificationManager = notificationManager;
+        GeneralsOnlineViewModel = generalsOnlineViewModel;
+        _gameInstallationDetectionOrchestrator = gameInstallationDetectionOrchestrator;
+        _configurationProvider = configurationProvider;
+        _userSettingsService = userSettingsService;
+        _profileEditorFacade = profileEditorFacade ?? throw new ArgumentNullException(nameof(profileEditorFacade));
+        _velopackUpdateManager = velopackUpdateManager ?? throw new ArgumentNullException(nameof(velopackUpdateManager));
+        _profileResourceService = profileResourceService ?? throw new ArgumentNullException(nameof(profileResourceService));
+        _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
+        _notificationFeedViewModel = notificationFeedViewModel ?? throw new ArgumentNullException(nameof(notificationFeedViewModel));
+        _generalsOnlineAuthService = generalsOnlineAuthService ?? throw new ArgumentNullException(nameof(generalsOnlineAuthService));
+        _logger = logger;
+
+        // Load initial settings using unified configuration
+        _selectedTab = LoadInitialTab();
+    }
 
     /// <summary>
     /// Gets the game profiles view model.
@@ -94,56 +142,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public GeneralsOnlineViewModel GeneralsOnlineViewModel { get; }
 
     /// <summary>
+    /// Gets the notification feed view model.
+    /// </summary>
+    public NotificationFeedViewModel NotificationFeed => _notificationFeedViewModel;
+
+    /// <summary>
     /// Gets the collection of detected game installations.
     /// </summary>
     public ObservableCollection<string> GameInstallations { get; } = [];
 
-    public ObservableCollection<NavigationTab> AvailableTabs { get; }
-
-    public MainViewModel(
-        GameProfileLauncherViewModel gameProfilesViewModel,
-        DownloadsViewModel downloadsViewModel,
-        ToolsViewModel toolsViewModel,
-        SettingsViewModel settingsViewModel,
-        NotificationManagerViewModel notificationManager,
-        GeneralsOnlineViewModel generalsOnlineViewModel,
-        IGameInstallationDetectionOrchestrator gameInstallationDetectionOrchestrator,
-        IConfigurationProviderService configurationProvider,
-        IUserSettingsService userSettingsService,
-        IProfileEditorFacade profileEditorFacade,
-        IVelopackUpdateManager velopackUpdateManager,
-        ProfileResourceService profileResourceService,
-        IGeneralsOnlineAuthService generalsOnlineAuthService,
-        ILogger<MainViewModel>? logger = null)
-    {
-        GameProfilesViewModel = gameProfilesViewModel;
-        DownloadsViewModel = downloadsViewModel;
-        ToolsViewModel = toolsViewModel;
-        SettingsViewModel = settingsViewModel;
-        NotificationManager = notificationManager;
-        GeneralsOnlineViewModel = generalsOnlineViewModel;
-        _gameInstallationDetectionOrchestrator = gameInstallationDetectionOrchestrator;
-        _configurationProvider = configurationProvider;
-        _userSettingsService = userSettingsService;
-        _profileEditorFacade = profileEditorFacade ?? throw new ArgumentNullException(nameof(profileEditorFacade));
-        _velopackUpdateManager = velopackUpdateManager ?? throw new ArgumentNullException(nameof(velopackUpdateManager));
-        _profileResourceService = profileResourceService ?? throw new ArgumentNullException(nameof(profileResourceService));
-        _generalsOnlineAuthService = generalsOnlineAuthService ?? throw new ArgumentNullException(nameof(generalsOnlineAuthService));
-        _logger = logger;
-
-        // Initialize available tabs
-        AvailableTabs = new ObservableCollection<NavigationTab>
-        {
-            NavigationTab.GameProfiles,
-            NavigationTab.Downloads,
-            NavigationTab.Tools,
-            NavigationTab.GeneralsOnline,
-            NavigationTab.Settings,
-        };
-
-        // Load initial settings using unified configuration
-        _selectedTab = LoadInitialTab();
-    }
+    /// <summary>
+    /// Gets the available navigation tabs.
+    /// </summary>
+    public NavigationTab[] AvailableTabs { get; } =
+    [
+        NavigationTab.GameProfiles,
+        NavigationTab.Downloads,
+        NavigationTab.Tools,
+        NavigationTab.GeneralsOnline,
+        NavigationTab.Settings,
+    ];
 
     // Fixed: Removed 'static' keyword to allow access to instance fields _configurationProvider and _logger
     private NavigationTab LoadInitialTab()
@@ -304,6 +322,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         //     null, // Persistent
                         //     "View Updates",
                         //     () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); }));
+                        _notificationService.Show(new NotificationMessage(
+                            NotificationType.Info,
+                            "Update Available",
+                            $"A new version ({updateInfo.TargetFullRelease.Version}) is available.",
+                            null, // Persistent
+                            actions: new List<NotificationAction>
+                            {
+                                new NotificationAction(
+                                    "View Updates",
+                                    () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); },
+                                    NotificationActionStyle.Primary,
+                                    dismissOnExecute: true),
+                            }));
                     });
                     return;
                 }
@@ -325,16 +356,27 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     {
                         // NotificationService reference needs to be added as a field/property if needed
                         // NotificationService.Show(new NotificationMessage(
-                        //     NotificationType.Info,
                         //     "Branch Update Available",
                         //     $"A new build ({newVersionBase}) is available on branch '{settings.SubscribedBranch}'.",
                         //     null, // Persistent
                         //     "View Updates",
                         //     () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); }));
+                        _notificationService.Show(new NotificationMessage(
+                            NotificationType.Info,
+                            "Branch Update Available",
+                            $"A new build ({newVersionBase}) is available on branch '{settings.SubscribedBranch}'.",
+                            null, // Persistent
+                            actions: new List<NotificationAction>
+                            {
+                                new NotificationAction(
+                                    "View Updates",
+                                    () => { SettingsViewModel.OpenUpdateWindowCommand.Execute(null); },
+                                    NotificationActionStyle.Primary,
+                                    dismissOnExecute: true),
+                            }));
                     });
                 }
-            }
-        }
+        }}
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Exception in CheckForUpdatesAsync");

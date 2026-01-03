@@ -17,6 +17,7 @@
              xmlns:settingsViews="clr-namespace:GenHub.Features.Settings.Views"
              xmlns:generalsOnlineVM="clr-namespace:GenHub.Features.GeneralsOnline.ViewModels"
              xmlns:generalsOnlineViews="clr-namespace:GenHub.Features.GeneralsOnline.Views"
+             xmlns:notifications="clr-namespace:GenHub.Features.Notifications.Views"
              xmlns:system="clr-namespace:System;assembly=System.Runtime"
              mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="700"
              x:Class="GenHub.Common.Views.MainView"
@@ -32,10 +33,9 @@
         <Style Selector="Button.modern-tab">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="#B0B0B0" />
-            <Setter Property="BorderThickness" Value="0,0,0,0" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="20,12" />
             <Setter Property="Margin" Value="0" />
-            <Setter Property="ClipToBounds" Value="True" />
             <Setter Property="FontWeight" Value="Medium" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -47,6 +47,8 @@
                     <Transitions>
                         <BrushTransition Property="Background" Duration="0:0:0.15" />
                         <BrushTransition Property="Foreground" Duration="0:0:0.15" />
+                        <TransformOperationsTransition Property="RenderTransform"
+                            Duration="0:0:0.15" />
                     </Transitions>
                 </Setter.Value>
             </Setter>
@@ -69,9 +71,9 @@
         </Style>
 
         <Style Selector="Button.modern-tab:pointerover">
-            <Setter Property="Background" Value="#1A1A1A" />
+            <Setter Property="Background" Value="#2A2A2A" />
             <Setter Property="Foreground" Value="#E0E0E0" />
-            <Setter Property="BorderThickness" Value="0,0,0,0" />
+            <Setter Property="RenderTransform" Value="translateY(-1px)" />
         </Style>
 
         <Style Selector="Button.modern-tab.active">
@@ -79,12 +81,13 @@
             <Setter Property="Foreground" Value="White" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="BorderThickness" Value="0,0,0,2" />
-            <Setter Property="BorderBrush" Value="#8A2BE2" />
+            <Setter Property="BorderBrush" Value="#4A9EFF" />
         </Style>
 
         <Style Selector="Button.modern-tab.active:pointerover">
             <Setter Property="Background" Value="#1A1A1A" />
             <Setter Property="Foreground" Value="White" />
+            <Setter Property="RenderTransform" Value="none" />
         </Style>
 
 
@@ -99,7 +102,8 @@
                     </LinearGradientBrush>
                 </Setter.Value>
             </Setter>
-            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="BorderBrush" Value="#404040" />
         </Style>
 
         <!-- Compact branding style -->
@@ -148,6 +152,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+
         <!-- Header -->
         <Border Grid.Row="0" Classes="header-background">
             <Grid ColumnDefinitions="Auto,*,Auto" Margin="20,6,20,6" Height="75">
@@ -172,32 +177,22 @@
                         Content="Tools"
                         Name="Tab2Button" />
                     <Button Classes="modern-tab"
+                        Classes.active="{Binding SelectedTab, Converter={x:Static conv:NavigationTabConverter.Instance}, ConverterParameter={x:Static enums:NavigationTab.GeneralsOnline}}"
+                        Command="{Binding SelectTabCommand}"
+                        CommandParameter="{x:Static enums:NavigationTab.GeneralsOnline}"
+                        Content="Generals Online"
+                        Name="Tab3Button" />
+                    <Button Classes="modern-tab"
                         Classes.active="{Binding SelectedTab, Converter={x:Static conv:NavigationTabConverter.Instance}, ConverterParameter={x:Static enums:NavigationTab.Settings}}"
                         Command="{Binding SelectTabCommand}"
                         CommandParameter="{x:Static enums:NavigationTab.Settings}"
                         Content="Settings"
-                        Name="Tab3Button" />
+                        Name="Tab4Button" />
                 </StackPanel>
-                <ItemsControl Grid.Column="0" ItemsSource="{Binding AvailableTabs}" VerticalAlignment="Bottom" Margin="0,0,0,6">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Classes="modern-tab"
-                                Classes.active="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SelectedTab, Converter={x:Static conv:NavigationTabConverter.Instance}, ConverterParameter={Binding}}"
-                                Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SelectTabCommand}"
-                                CommandParameter="{Binding}"
-                                Content="{Binding Converter={StaticResource TabToNameConverter}}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <!-- branding and update button - Right side -->
-                <Grid Grid.Column="2" ColumnDefinitions="Auto,Auto" VerticalAlignment="Center">
 
-                    <!-- Logo and title section - Right side -->
+                <!-- Right side container -->
+                <Grid Grid.Column="2" ColumnDefinitions="Auto,Auto" VerticalAlignment="Center">
+                    <!-- Logo and title section -->
                     <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,0,0,0">
                         <Image Source="avares://GenHub/Assets/Logos/generalshub-logo.png" Width="90" Height="90" HorizontalAlignment="Center" Margin="0,-10,0,-15" />
                         <TextBlock Text="C&amp;C Generals Launcher" FontSize="9" Foreground="#A0A0A0" FontWeight="Normal" HorizontalAlignment="Center" VerticalAlignment="Top" TextAlignment="Center" Margin="0,0,0,0" />
@@ -205,6 +200,8 @@
                 </Grid>
             </Grid>
         </Border>
+
+
 
         <!-- Main content area -->
         <Grid Grid.Row="1">

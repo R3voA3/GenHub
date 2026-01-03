@@ -33,10 +33,16 @@ public class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // Load environment variables (locally)
+        // Load environment variables (locally and from app directory)
         try
         {
             Env.TraversePath().Load();
+            
+            var appEnvPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".env");
+            if (System.IO.File.Exists(appEnvPath))
+            {
+                Env.Load(appEnvPath);
+            }
         }
         catch (Exception ex)
         {

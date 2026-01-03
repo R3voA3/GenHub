@@ -1,9 +1,14 @@
 # GenHub Test Release Build Script
 # This script builds and packages GenHub as version 0.0.0 for local testing.
 
+param (
+    [string]$Version = "0.0.1",
+    [string]$ApiKey = $null
+)
+
 $ErrorActionPreference = "Stop"
 
-$version = "0.0.1"
+$version = $Version
 $configuration = "Release"
 $runtime = "win-x64"
 $projectPath = "GenHub/GenHub.Windows/GenHub.Windows.csproj"
@@ -45,6 +50,16 @@ dotnet publish $projectPath `
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Dotnet publish failed."
+}
+
+# 3.5 Handle .env file
+if ($null -ne $ApiKey) {
+    Write-Host "Creating .env file with provided API key..." -ForegroundColor Gray
+    $envContent = "UPLOADTHING_TOKEN=$ApiKey`nGENHUB_UPLOADTHING_TOKEN=$ApiKey"
+    [System.IO.File]::WriteAllText("$publishDir\.env", $envContent)
+} elseif (Test-Path ".env") {
+    Write-Host "Copying existing .env file to publish directory..." -ForegroundColor Gray
+    Copy-Item ".env" -Destination $publishDir
 }
 
 # 4. Create Velopack Package

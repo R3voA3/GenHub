@@ -1,6 +1,8 @@
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Services;
+using GenHub.Core.Options;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,22 +19,49 @@ namespace GenHub.Features.Tools.Services;
 /// </summary>
 public sealed class UploadThingService(
     HttpClient httpClient,
+    IOptions<UploadThingOptions> options,
     ILogger<UploadThingService> logger) : IUploadThingService
 {
+    private string? GetToken()
+    {
+        var token = options.Value.ApiToken;
+        if (!string.IsNullOrEmpty(token))
+        {
+            logger.LogDebug("Using UploadThing token from configuration options (Length: {Length}).", token.Length);
+            return token;
+        }
+
+        // Fallback to environment variables if not in options
+        token = Environment.GetEnvironmentVariable(ApiConstants.UploadThingTokenEnvVar) ??
+                Environment.GetEnvironmentVariable(ApiConstants.UploadThingTokenEnvVarAlt);
+        
+        if (!string.IsNullOrEmpty(token))
+        {
+            logger.LogDebug("Using UploadThing token from environment variables (Length: {Length}).", token.Length);
+            return token;
+        }
+
+        // Fallback to build-time injected token if no env var is found
+        token = ApiConstants.BuildTimeUploadThingToken;
+        if (!string.IsNullOrEmpty(token))
+        {
+            logger.LogDebug("Using UploadThing token from build-time injection (Length: {Length}).", token.Length);
+        }
+        else
+        {
+            logger.LogWarning("No UploadThing token found in options, environment variables, or build-time constants.");
+        }
+
+        return token;
+    }
+
     /// <inheritdoc />
     public async Task<string?> UploadFileAsync(
         string filePath,
         IProgress<double>? progress = null,
         CancellationToken ct = default)
     {
-        var token = Environment.GetEnvironmentVariable(ApiConstants.UploadThingTokenEnvVar) ??
-                    Environment.GetEnvironmentVariable(ApiConstants.UploadThingTokenEnvVarAlt);
-
-        // Fallback to build-time injected token if no env var is found
-        if (string.IsNullOrEmpty(token))
-        {
-            token = ApiConstants.BuildTimeUploadThingToken;
-        }
+        var token = GetToken();
 
         if (string.IsNullOrEmpty(token))
         {
@@ -123,14 +152,7 @@ public sealed class UploadThingService(
     /// <inheritdoc />
     public async Task<bool> DeleteFileAsync(string fileKey, CancellationToken ct = default)
     {
-        var token = Environment.GetEnvironmentVariable(ApiConstants.UploadThingTokenEnvVar) ??
-                    Environment.GetEnvironmentVariable(ApiConstants.UploadThingTokenEnvVarAlt);
-
-        // Fallback to build-time injected token if no env var is found
-        if (string.IsNullOrEmpty(token))
-        {
-            token = ApiConstants.BuildTimeUploadThingToken;
-        }
+        var token = GetToken();
 
         if (string.IsNullOrEmpty(token))
         {
