@@ -11,6 +11,7 @@ using GenHub.Core.Constants;
 using GenHub.Core.Extensions;
 using GenHub.Core.Helpers;
 using GenHub.Core.Interfaces.Common;
+using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.GameInstallations;
 using GenHub.Core.Interfaces.GameProfiles;
 using GenHub.Core.Interfaces.GameSettings;
@@ -47,13 +48,9 @@ public class ProfileLauncherFacade(
     IGameSettingsService gameSettingsService,
     IStorageLocationService storageLocationService,
     INotificationService notificationService,
+    IGeneralsOnlineProfileReconciler generalsOnlineReconciler,
     ILogger<ProfileLauncherFacade> logger) : IProfileLauncherFacade
 {
-    /// <summary>
-    /// Timeout for game settings application to prevent blocking the launch process.
-    /// </summary>
-    private static readonly TimeSpan GameSettingsApplicationTimeout = TimeSpan.FromSeconds(5);
-
     /// <inheritdoc/>
     public async Task<ProfileOperationResult<GameLaunchInfo>> LaunchProfileAsync(string profileId, bool skipUserDataCleanup = false, CancellationToken cancellationToken = default)
     {
@@ -109,6 +106,47 @@ public class ProfileLauncherFacade(
                 {
                     profile.GameInstallationId = resolvedInstallation.Id;
                     logger.LogInformation("Rebound profile {ProfileId} to installation {InstallationId}", profileId, resolvedInstallation.Id);
+                }
+            }
+
+            // Step 2.5: Check for GeneralsOnline updates if this is a GO profile
+            logger.LogInformation(
+                "Profile Publisher Debug: Client={Client}, Publisher={PublisherType}, IsGO={IsGO}",
+                profile.GameClient?.Name ?? "null",
+                profile.GameClient?.PublisherType ?? "null",
+                IsGeneralsOnlineProfile(profile));
+
+            if (IsGeneralsOnlineProfile(profile))
+            {
+                logger.LogDebug("[Launch] Step 2.5: Checking for GeneralsOnline updates");
+                var reconcileResult = await generalsOnlineReconciler.CheckAndReconcileIfNeededAsync(
+                    profileId,
+                    cancellationToken);
+
+                if (!reconcileResult.Success)
+                {
+                    logger.LogError(
+                        "[Launch] GeneralsOnline reconciliation failed: {Error}",
+                        reconcileResult.FirstError);
+                    return ProfileOperationResult<GameLaunchInfo>.CreateFailure(
+                        $"GeneralsOnline update failed: {reconcileResult.FirstError}");
+                }
+
+                if (reconcileResult.Data)
+                {
+                    // Profile was updated, reload it
+                    logger.LogInformation("[Launch] Profile was updated by GeneralsOnline reconciliation, reloading");
+                    profileResult = await profileManager.GetProfileAsync(profileId, cancellationToken);
+                    if (profileResult.Failed)
+                    {
+                        return ProfileOperationResult<GameLaunchInfo>.CreateFailure(
+                            string.Join(", ", profileResult.Errors));
+                    }
+
+                    profile = profileResult.Data!;
+                    logger.LogDebug(
+                        "[Launch] Profile reloaded after GeneralsOnline update - EnabledContent: {ContentCount} items",
+                        profile.EnabledContentIds?.Count ?? 0);
                 }
             }
 
@@ -757,6 +795,37 @@ public class ProfileLauncherFacade(
     }
 
     /// <summary>
+    /// Checks if a profile uses a GeneralsOnline game client.
+    /// </summary>
+    /// <param name="profile">The profile to check.</param>
+    /// <returns>True if the profile uses GeneralsOnline, false otherwise.</returns>
+    private static bool IsGeneralsOnlineProfile(GameProfile profile)
+    {
+        // Check PublisherType first
+        if (profile.GameClient?.PublisherType?.Equals(
+            PublisherTypeConstants.GeneralsOnline,
+            StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        // Check if Name contains "GeneralsOnline" (for legacy or incomplete profiles)
+        if (profile.GameClient?.Name?.Contains("GeneralsOnline", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        // Final fallback: Check enabled content for GeneralsOnline manifests
+        if (profile.EnabledContentIds != null &&
+            profile.EnabledContentIds.Any(id => id.Contains("generalsonline", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Validates dependencies between manifests to ensure compatibility.
     /// </summary>
     /// <param name="manifests">The list of manifests to validate.</param>
@@ -789,11 +858,17 @@ public class ProfileLauncherFacade(
                     // Validate by dependency type
                     if (!manifestsByType.TryGetValue(dependency.DependencyType, out var potentialMatches) || potentialMatches.Count == 0)
                     {
-                        errors.Add($"Content '{manifest.Name}' requires {dependency.DependencyType} content, but none is selected");
+                        var msg = $"Content '{manifest.Name}' requires {dependency.DependencyType} content, but none is selected";
+                        if (!dependency.IsOptional)
+                        {
+                            errors.Add(msg);
+                        }
+
                         logger.LogWarning(
-                            "Dependency validation failed: {ManifestName} requires {DependencyType} but none found",
+                            "Dependency validation failed: {ManifestName} requires {DependencyType} but none found (Optional: {IsOptional})",
                             manifest.Name,
-                            dependency.DependencyType);
+                            dependency.DependencyType,
+                            dependency.IsOptional);
                         continue;
                     }
 
@@ -846,11 +921,17 @@ public class ProfileLauncherFacade(
 
                         if (requiredManifest == null)
                         {
-                            errors.Add($"Content '{manifest.Name}' requires specific content '{dependency.Name}' (ID: {dependency.Id}), but it is not selected");
+                            var msg = $"Content '{manifest.Name}' requires specific content '{dependency.Name}' (ID: {dependency.Id}), but it is not selected";
+                            if (!dependency.IsOptional)
+                            {
+                                errors.Add(msg);
+                            }
+
                             logger.LogWarning(
-                                "Dependency validation failed: {ManifestName} requires specific dependency {DependencyId} but not found",
+                                "Dependency validation failed: {ManifestName} requires specific dependency {DependencyId} but not found (Optional: {IsOptional})",
                                 manifest.Name,
-                                dependency.Id);
+                                dependency.Id,
+                                dependency.IsOptional);
                             continue;
                         }
 
@@ -860,13 +941,19 @@ public class ProfileLauncherFacade(
                             if (!IsVersionCompatible(requiredManifest.Version, dependency))
                             {
                                 var versionInfo = BuildVersionRequirementString(dependency);
-                                errors.Add($"Content '{manifest.Name}' requires '{dependency.Name}' {versionInfo}, but version {requiredManifest.Version} is selected");
+                                var msg = $"Content '{manifest.Name}' requires '{dependency.Name}' {versionInfo}, but version {requiredManifest.Version} is selected";
+                                if (!dependency.IsOptional)
+                                {
+                                    errors.Add(msg);
+                                }
+
                                 logger.LogWarning(
-                                    "Version compatibility failed: {ManifestName} requires {DependencyName} {VersionInfo}, but {ActualVersion} found",
+                                    "Version compatibility failed: {ManifestName} requires {DependencyName} {VersionInfo}, but {ActualVersion} found (Optional: {IsOptional})",
                                     manifest.Name,
                                     dependency.Name,
                                     versionInfo,
-                                    requiredManifest.Version);
+                                    requiredManifest.Version,
+                                    dependency.IsOptional);
                             }
                         }
                     }
@@ -884,11 +971,17 @@ public class ProfileLauncherFacade(
 
                         if (compatibleInstallation == null)
                         {
-                            errors.Add($"Content '{manifest.Name}' requires {profileGameType} game installation, but selected installation is for a different game");
+                            var msg = $"Content '{manifest.Name}' requires {profileGameType} game installation, but selected installation is for a different game";
+                            if (!dependency.IsOptional)
+                            {
+                                errors.Add(msg);
+                            }
+
                             logger.LogWarning(
-                                "GameType mismatch: {ManifestName} requires {RequiredGameType}, but no matching installation found",
+                                "GameType mismatch: {ManifestName} requires {RequiredGameType}, but no matching installation found (Optional: {IsOptional})",
                                 manifest.Name,
-                                profileGameType);
+                                profileGameType,
+                                dependency.IsOptional);
                         }
                     }
 
@@ -898,13 +991,19 @@ public class ProfileLauncherFacade(
                         if (!dependency.CompatibleGameTypes.Contains(profileGameType))
                         {
                             var compatibleGamesStr = string.Join(", ", dependency.CompatibleGameTypes);
-                            errors.Add($"Content '{manifest.Name}' dependency '{dependency.Name}' is only compatible with {compatibleGamesStr}, but profile is for {profileGameType}");
+                            var msg = $"Content '{manifest.Name}' dependency '{dependency.Name}' is only compatible with {compatibleGamesStr}, but profile is for {profileGameType}";
+                            if (!dependency.IsOptional)
+                            {
+                                errors.Add(msg);
+                            }
+
                             logger.LogWarning(
-                                "GameType compatibility failed: {ManifestName} dependency {DependencyName} requires {CompatibleGameTypes}, but profile is {ProfileGameType}",
+                                "GameType compatibility failed: {ManifestName} dependency {DependencyName} requires {CompatibleGameTypes}, but profile is {ProfileGameType} (Optional: {IsOptional})",
                                 manifest.Name,
                                 dependency.Name,
                                 compatibleGamesStr,
-                                profileGameType);
+                                profileGameType,
+                                dependency.IsOptional);
                         }
                     }
 
@@ -919,13 +1018,19 @@ public class ProfileLauncherFacade(
 
                             if (!string.Equals(dependency.PublisherType, publisherType, StringComparison.OrdinalIgnoreCase))
                             {
-                                errors.Add($"Content '{manifest.Name}' dependency '{dependency.Name}' requires publisher type '{dependency.PublisherType}', but found '{publisherType}'");
+                                var msg = $"Content '{manifest.Name}' dependency '{dependency.Name}' requires publisher type '{dependency.PublisherType}', but found '{publisherType}'";
+                                if (!dependency.IsOptional)
+                                {
+                                    errors.Add(msg);
+                                }
+
                                 logger.LogWarning(
-                                    "Publisher type mismatch: {ManifestName} dependency {DependencyName} requires {RequiredPublisher}, but found {ActualPublisher}",
+                                    "Publisher type mismatch: {ManifestName} dependency {DependencyName} requires {RequiredPublisher}, but found {ActualPublisher} (Optional: {IsOptional})",
                                     manifest.Name,
                                     dependency.Name,
                                     dependency.PublisherType,
-                                    publisherType);
+                                    publisherType,
+                                    dependency.IsOptional);
                             }
                         }
                     }

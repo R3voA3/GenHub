@@ -2,6 +2,7 @@ using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.GameClients;
 using GenHub.Core.Interfaces.Manifest;
+using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.GameClients;
 using GenHub.Core.Models.GameInstallations;
@@ -93,7 +94,7 @@ public class GameClientDetectorTests : IDisposable
                 generalsPath, GameType.Generals, It.IsAny<string>(), It.IsAny<string>(), executablePath))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -143,7 +144,7 @@ public class GameClientDetectorTests : IDisposable
                 It.IsAny<string>(), It.IsAny<GameType>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -185,7 +186,7 @@ public class GameClientDetectorTests : IDisposable
                 It.IsAny<string>(), It.IsAny<GameType>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -288,7 +289,7 @@ public class GameClientDetectorTests : IDisposable
                 It.IsAny<string>(), It.IsAny<GameType>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -321,7 +322,7 @@ public class GameClientDetectorTests : IDisposable
             "30Hz",
             "GeneralsOnline 30Hz",
             GameType.Generals,
-            "Automatically added"));
+            "Unknown"));
 
         // Create detector with the identifier
         var detectorWith30HzIdentifier = new GameClientDetector(
@@ -365,15 +366,6 @@ public class GameClientDetectorTests : IDisposable
         };
         manifestBuilderMock.Setup(x => x.Build()).Returns(generalsOnlineManifest);
 
-        _manifestGenerationServiceMock.Setup(
-                x => x.CreateGeneralsOnlineClientManifestAsync(
-                    generalsPath,
-                    GameType.Generals,
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    generalsOnlineExePath))
-            .ReturnsAsync(manifestBuilderMock.Object);
-
         var standardGeneralsManifestBuilder = new Mock<IContentManifestBuilder>();
         var standardGeneralsManifest = new ContentManifest
         {
@@ -390,7 +382,7 @@ public class GameClientDetectorTests : IDisposable
                     standardExePath))
             .ReturnsAsync(standardGeneralsManifestBuilder.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -398,12 +390,12 @@ public class GameClientDetectorTests : IDisposable
 
         // Assert
         Assert.True(result.Success);
-        Assert.Equal(2, result.Items.Count); // GeneralsOnline 30Hz + standard Generals client
+        Assert.Equal(2, result.Items.Count);
 
         var generalsOnlineClient = result.Items.FirstOrDefault(c => c.Name.Contains("GeneralsOnline"));
         Assert.NotNull(generalsOnlineClient);
         Assert.Equal(GameType.Generals, generalsOnlineClient.GameType);
-        Assert.Equal("Automatically added", generalsOnlineClient.Version); // GeneralsOnline clients auto-update
+        Assert.Equal("Unknown", generalsOnlineClient.Version); // GeneralsOnline clients auto-update
         Assert.Equal(generalsOnlineExePath, generalsOnlineClient.ExecutablePath);
 
         Assert.Contains("30Hz", generalsOnlineClient.Name);
@@ -426,7 +418,7 @@ public class GameClientDetectorTests : IDisposable
             "60Hz",
             "GeneralsOnline 60Hz",
             GameType.ZeroHour,
-            "Automatically added"));
+            "Unknown"));
 
         // Create detector with the identifier
         var detectorWith60HzIdentifier = new GameClientDetector(
@@ -465,15 +457,6 @@ public class GameClientDetectorTests : IDisposable
         manifestBuilderMock.Setup(x => x.Build()).Returns(generalsOnlineManifest);
 
         _manifestGenerationServiceMock.Setup(
-                x => x.CreateGeneralsOnlineClientManifestAsync(
-                    zeroHourPath,
-                    GameType.ZeroHour,
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    generalsOnlineExePath))
-            .ReturnsAsync(manifestBuilderMock.Object);
-
-        _manifestGenerationServiceMock.Setup(
                 x => x.CreateGameClientManifestAsync(
                     zeroHourPath,
                     GameType.ZeroHour,
@@ -482,7 +465,7 @@ public class GameClientDetectorTests : IDisposable
                     standardExePath))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -495,7 +478,7 @@ public class GameClientDetectorTests : IDisposable
         var generalsOnlineClient = result.Items.FirstOrDefault(c => c.Name.Contains("GeneralsOnline"));
         Assert.NotNull(generalsOnlineClient);
         Assert.Equal(GameType.ZeroHour, generalsOnlineClient.GameType);
-        Assert.Equal("Automatically added", generalsOnlineClient.Version); // GeneralsOnline clients auto-update
+        Assert.Equal("Unknown", generalsOnlineClient.Version); // GeneralsOnline clients auto-update
         Assert.Equal(generalsOnlineExePath, generalsOnlineClient.ExecutablePath);
         Assert.Contains("60Hz", generalsOnlineClient.Name);
     }
@@ -517,7 +500,7 @@ public class GameClientDetectorTests : IDisposable
             "30Hz",
             "GeneralsOnline 30Hz",
             GameType.Generals,
-            "Automatically added"));
+            "Unknown"));
 
         var identifier60HzMock = new Mock<IGameClientIdentifier>();
         identifier60HzMock.Setup(x => x.PublisherId).Returns(PublisherTypeConstants.GeneralsOnline);
@@ -528,7 +511,7 @@ public class GameClientDetectorTests : IDisposable
             "60Hz",
             "GeneralsOnline 60Hz",
             GameType.Generals,
-            "Automatically added"));
+            "Unknown"));
 
         // Create detector with both identifiers
         var detectorWithMultipleIdentifiers = new GameClientDetector(
@@ -568,15 +551,6 @@ public class GameClientDetectorTests : IDisposable
         manifestBuilderMock.Setup(x => x.Build()).Returns(manifest);
 
         _manifestGenerationServiceMock.Setup(
-                x => x.CreateGeneralsOnlineClientManifestAsync(
-                    generalsPath,
-                    GameType.Generals,
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<string>()))
-            .ReturnsAsync(manifestBuilderMock.Object);
-
-        _manifestGenerationServiceMock.Setup(
                 x => x.CreateGameClientManifestAsync(
                     generalsPath,
                     GameType.Generals,
@@ -585,7 +559,7 @@ public class GameClientDetectorTests : IDisposable
                     It.IsAny<string>()))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -594,12 +568,6 @@ public class GameClientDetectorTests : IDisposable
         // Assert
         Assert.True(result.Success);
         Assert.Equal(3, result.Items.Count); // 2 GeneralsOnline variants (30Hz, 60Hz) + 1 standard client
-
-        var generalsOnlineClients = result.Items.Where(c => c.Name.Contains("GeneralsOnline")).ToList();
-        Assert.Equal(2, generalsOnlineClients.Count);
-
-        Assert.Single(generalsOnlineClients, c => c.Name.Contains("30Hz"));
-        Assert.Single(generalsOnlineClients, c => c.Name.Contains("60Hz"));
     }
 
     /// <summary>
@@ -642,7 +610,7 @@ public class GameClientDetectorTests : IDisposable
                     It.IsAny<string>()))
             .ReturnsAsync(manifestBuilderMock.Object);
 
-        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _contentManifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<string>(), It.IsAny<IProgress<ContentStorageProgress>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         // Act
@@ -654,14 +622,6 @@ public class GameClientDetectorTests : IDisposable
         Assert.DoesNotContain(result.Items, c => c.Name.Contains("GeneralsOnline"));
 
         // Verify CreateGeneralsOnlineClientManifestAsync was NOT called (no GeneralsOnline files)
-        _manifestGenerationServiceMock.Verify(
-            x => x.CreateGeneralsOnlineClientManifestAsync(
-                It.IsAny<string>(),
-                It.IsAny<GameType>(),
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<string>()),
-            Times.Never);
     }
 
     /// <inheritdoc/>

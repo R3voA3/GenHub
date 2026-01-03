@@ -13,6 +13,7 @@
 
     <ItemGroup>
         <PackageReference Include="Avalonia.Desktop" />
+        <PackageReference Include="DotNetEnv" />
         <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
         <PackageReference Include="Avalonia.Diagnostics">
             <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
@@ -26,6 +27,14 @@
     <ItemGroup>
         <None Remove="Resources\update_genhub.ps1" />
         <EmbeddedResource Include="Resources\update_genhub.ps1" />
+    </ItemGroup>
+
+    <!-- Copy .env file to output directory for local debugging if it exists -->
+    <ItemGroup Condition="Exists('..\..\.env')">
+        <None Include="..\..\.env">
+            <Link>.env</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
     </ItemGroup>
 
     <ItemGroup>
