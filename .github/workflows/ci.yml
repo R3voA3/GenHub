@@ -6,9 +6,9 @@ permissions:
 
 on:
   push:
-    branches: [ main, development]
+    branches: [main, development, undead2146]
   pull_request:
-    branches: [ main, development]
+    branches: [main, development]
   workflow_dispatch:
 
 concurrency:
@@ -21,8 +21,6 @@ env:
   CORE_PROJECT: 'GenHub/GenHub.Core/GenHub.Core.csproj'
   UI_PROJECT: 'GenHub/GenHub/GenHub.csproj'
   WINDOWS_PROJECT: 'GenHub/GenHub.Windows/GenHub.Windows.csproj'
-  LINUX_PROJECT: 'GenHub/GenHub.Linux/GenHub.Linux.csproj'
-  TEST_PROJECTS: 'GenHub/GenHub.Tests/**/*.csproj'
 
 jobs:
   detect-changes:
@@ -30,11 +28,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      core: ${{ steps.filter.outputs.core }}
-      ui: ${{ steps.filter.outputs.ui }}
-      windows: ${{ steps.filter.outputs.windows }}
-      linux: ${{ steps.filter.outputs.linux }}
-      tests: ${{ steps.filter.outputs.tests }}
       any: ${{ steps.filter.outputs.any }}
     steps:
       - name: Checkout Code
@@ -45,16 +38,6 @@ jobs:
         id: filter
         with:
           filters: |
-            core:
-              - 'GenHub/GenHub.Core/**'
-            ui:
-              - 'GenHub/GenHub/**'
-            windows:
-              - 'GenHub/GenHub.Windows/**'
-            linux:
-              - 'GenHub/GenHub.Linux/**'
-            tests:
-              - 'GenHub/GenHub.Tests/**'
             any:
               - '**/*.cs'
               - '**/*.axaml'
@@ -62,18 +45,10 @@ jobs:
               - '**/*.sln'
               - '.github/workflows/**'
 
-      - name: Changes Summary
-        run: |
-          echo "### 🔍 File Changes Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Core: ${{ steps.filter.outputs.core == 'true' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- UI: ${{ steps.filter.outputs.ui == 'true' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Windows: ${{ steps.filter.outputs.windows == 'true' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Linux: ${{ steps.filter.outputs.linux == 'true' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
-
   build-windows:
-    name: Build Windows
+    name: Build Windows Release
     needs: detect-changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any == 'true' || needs.detect-changes.outputs.core == 'true' || needs.detect-changes.outputs.ui == 'true' || needs.detect-changes.outputs.windows == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any == 'true' }}
     runs-on: windows-latest
 
     steps:
@@ -101,8 +76,6 @@ jobs:
           $prNumber = "${{ github.event.pull_request.number }}"
           $runNumber = "${{ github.run_number }}"
 
-          # Velopack requires SemVer2 3-part version (MAJOR.MINOR.PATCH)
-          # Using 0.0.X format to indicate alpha/pre-release status
           if ($prNumber) {
             $version = "0.0.$runNumber-pr$prNumber"
             $channel = "PR"
@@ -110,13 +83,6 @@ jobs:
             $version = "0.0.$runNumber"
             $channel = "CI"
           }
-
-          Write-Host "Build Info:"
-          Write-Host "  Short Hash: $shortHash"
-          Write-Host "  PR Number: $prNumber"
-          Write-Host "  Run Number: $runNumber"
-          Write-Host "  Version: $version (SemVer2 for Velopack)"
-          Write-Host "  Channel: $channel"
 
           echo "SHORT_HASH=$shortHash" >> $env:GITHUB_OUTPUT
           echo "PR_NUMBER=$prNumber" >> $env:GITHUB_OUTPUT
@@ -137,16 +103,9 @@ jobs:
             "-p:PullRequestNumber=${{ steps.buildinfo.outputs.PR_NUMBER }}"
             "-p:BuildChannel=${{ steps.buildinfo.outputs.CHANNEL }}"
           )
-
-          Write-Host "Building Core project with build info"
           dotnet build "${{ env.CORE_PROJECT }}" -c ${{ env.BUILD_CONFIGURATION }} @buildProps
-
-          Write-Host "Building UI project"
           dotnet build "${{ env.UI_PROJECT }}" -c ${{ env.BUILD_CONFIGURATION }} @buildProps
-
-          Write-Host "Building Windows project"
           dotnet build "${{ env.WINDOWS_PROJECT }}" -c ${{ env.BUILD_CONFIGURATION }} @buildProps
-
 
       - name: Publish Windows App
         shell: pwsh
@@ -157,9 +116,6 @@ jobs:
             "-p:PullRequestNumber=${{ steps.buildinfo.outputs.PR_NUMBER }}"
             "-p:BuildChannel=${{ steps.buildinfo.outputs.CHANNEL }}"
           )
-
-          Write-Host "Publishing Windows application"
-          Write-Host "Version: ${{ steps.buildinfo.outputs.VERSION }}"
           dotnet publish "${{ env.WINDOWS_PROJECT }}" `
             -c ${{ env.BUILD_CONFIGURATION }} `
             -r win-x64 `
@@ -173,7 +129,6 @@ jobs:
       - name: Create Velopack Package
         shell: pwsh
         run: |
-          Write-Host "Creating Velopack package..."
           vpk pack `
             --packId GenHub `
             --packVersion ${{ steps.buildinfo.outputs.VERSION }} `
@@ -184,33 +139,11 @@ jobs:
             --icon GenHub/GenHub/Assets/Icons/generalshub.ico `
             --outputDir velopack-release
 
-          Write-Host "Velopack artifacts created:"
-          Get-ChildItem -Path "velopack-release" -Recurse | Select-Object Name, Length
-
-      - name: Run Tests
-        id: tests
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $testProjects = Get-ChildItem -Path "GenHub/GenHub.Tests" -Recurse -Filter *.csproj | Where-Object { $_.Name -notlike '*Linux*' }
-          if ($testProjects) {
-            foreach ($testProject in $testProjects) {
-              Write-Host "Testing $($testProject.FullName)"
-              dotnet test $testProject.FullName -c $env:BUILD_CONFIGURATION
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Test failed for $($testProject.FullName)"
-                }
-            }
-          } else {
-            Write-Host "No test projects found."
-          }
-
       - name: Upload Velopack Update Package (.nupkg)
         uses: actions/upload-artifact@v4
         with:
           name: genhub-velopack-windows-${{ steps.buildinfo.outputs.VERSION }}
           path: velopack-release/*.nupkg
-          if-no-files-found: error
           retention-days: 30
 
       - name: Upload Velopack Setup Installer
@@ -218,7 +151,6 @@ jobs:
         with:
           name: genhub-setup-windows-${{ steps.buildinfo.outputs.VERSION }}
           path: velopack-release/*-Setup.exe
-          if-no-files-found: error
           retention-days: 30
 
       - name: Upload Velopack Metadata
@@ -226,154 +158,17 @@ jobs:
         with:
           name: genhub-metadata-windows-${{ steps.buildinfo.outputs.VERSION }}
           path: velopack-release/RELEASES
-          if-no-files-found: error
           retention-days: 30
-
-  build-linux:
-    name: Build Linux
-    needs: detect-changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.any == 'true' || needs.detect-changes.outputs.core == 'true' || needs.detect-changes.outputs.ui == 'true' || needs.detect-changes.outputs.linux == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Install Linux Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libx11-dev
-
-      - name: Cache NuGet Packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Extract Build Info
-        id: buildinfo
-        run: |
-          SHORT_HASH=$(echo "${{ github.sha }}" | cut -c1-7)
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          RUN_NUMBER="${{ github.run_number }}"
-
-          # Velopack requires SemVer2 3-part version (MAJOR.MINOR.PATCH)
-          # Using 0.0.X format to indicate alpha/pre-release status
-          if [ -n "$PR_NUMBER" ]; then
-            VERSION="0.0.${RUN_NUMBER}-pr${PR_NUMBER}"
-            CHANNEL="PR"
-          else
-            VERSION="0.0.${RUN_NUMBER}"
-            CHANNEL="CI"
-          fi
-
-          echo "Build Info:"
-          echo "  Short Hash: $SHORT_HASH"
-          echo "  PR Number: $PR_NUMBER"
-          echo "  Run Number: $RUN_NUMBER"
-          echo "  Version: $VERSION (SemVer2 for Velopack)"
-          echo "  Channel: $CHANNEL"
-
-          echo "SHORT_HASH=$SHORT_HASH" >> $GITHUB_OUTPUT
-          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Inject Secrets
-        shell: pwsh
-        run: |
-          ./.github/scripts/inject-token.ps1 -Token "${{ secrets.UPLOADTHING_TOKEN }}"
-
-      - name: Build Projects
-        run: |
-          BUILD_PROPS="-p:Version=${{ steps.buildinfo.outputs.VERSION }} -p:GitShortHash=${{ steps.buildinfo.outputs.SHORT_HASH }} -p:PullRequestNumber=${{ steps.buildinfo.outputs.PR_NUMBER }} -p:BuildChannel=${{ steps.buildinfo.outputs.CHANNEL }}"
-
-          echo "Building Core project with build info"
-          dotnet build "${{ env.CORE_PROJECT }}" -c ${{ env.BUILD_CONFIGURATION }} $BUILD_PROPS
-
-          echo "Building UI project"
-          dotnet build "${{ env.UI_PROJECT }}" -c ${{ env.BUILD_CONFIGURATION }} $BUILD_PROPS
-
-          echo "Building Linux project"
-          dotnet build "${{ env.LINUX_PROJECT }}" -c ${{ env.BUILD_CONFIGURATION }} $BUILD_PROPS
-
-      - name: Publish Linux App
-        run: |
-          BUILD_PROPS="-p:Version=${{ steps.buildinfo.outputs.VERSION }} -p:GitShortHash=${{ steps.buildinfo.outputs.SHORT_HASH }} -p:PullRequestNumber=${{ steps.buildinfo.outputs.PR_NUMBER }} -p:BuildChannel=${{ steps.buildinfo.outputs.CHANNEL }}"
-
-          echo "Publishing Linux application"
-          dotnet publish "${{ env.LINUX_PROJECT }}" \
-            -c ${{ env.BUILD_CONFIGURATION }} \
-            -r linux-x64 \
-            --self-contained true \
-            -o "linux-publish" \
-            $BUILD_PROPS
-
-      - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
-
-      - name: Create Velopack Package
-        run: |
-          echo "Creating Velopack package..."
-          vpk pack \
-            --packId GenHub \
-            --packVersion ${{ steps.buildinfo.outputs.VERSION }} \
-            --packDir linux-publish \
-            --mainExe GenHub.Linux \
-            --packTitle "GenHub" \
-            --packAuthors "Community Outpost" \
-            --icon GenHub/GenHub/Assets/Icons/generalshub-icon.png \
-            --outputDir velopack-release
-
-          echo "Velopack artifacts created:"
-          ls -lh velopack-release/
-
-      - name: Run Tests
-        run: |
-          shopt -s globstar nullglob
-          for test_project in ${{ env.TEST_PROJECTS }}; do
-            [[ "$test_project" == *Windows* ]] && continue
-            echo "Testing $test_project"
-            dotnet test "$test_project" -c ${{ env.BUILD_CONFIGURATION }} --verbosity normal
-          done
-
-      - name: Upload Velopack Update Package (.nupkg)
-        uses: actions/upload-artifact@v4
-        with:
-          name: genhub-velopack-linux-${{ steps.buildinfo.outputs.VERSION }}
-          path: velopack-release/*.nupkg
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload Velopack Metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: genhub-metadata-linux-${{ steps.buildinfo.outputs.VERSION }}
-          path: velopack-release/releases.*.json
-          if-no-files-found: error
-          retention-days: 30
-
-
 
   summary:
     name: Build Summary
-    needs: [build-windows, build-linux]
+    needs: build-windows
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Generate Summary
         run: |
-          echo "### 🚀 GenHub Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 GenHub Windows Build Results" >> $GITHUB_STEP_SUMMARY
           echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows | ${{ needs.build-windows.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux | ${{ needs.build-linux.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY

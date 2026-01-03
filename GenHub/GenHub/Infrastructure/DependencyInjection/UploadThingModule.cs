@@ -24,13 +24,6 @@ public static class UploadThingModule
                 // Try configuration first (appsettings.json, environment variables via IConfiguration)
                 options.ApiToken = configuration["UPLOADTHING_TOKEN"] ?? 
                                  configuration["GENHUB_UPLOADTHING_TOKEN"];
-
-                // Fallback to direct environment variable access if IConfiguration hasn't picked it up yet
-                if (string.IsNullOrEmpty(options.ApiToken))
-                {
-                    options.ApiToken = Environment.GetEnvironmentVariable("UPLOADTHING_TOKEN") ??
-                                     Environment.GetEnvironmentVariable("GENHUB_UPLOADTHING_TOKEN");
-                }
             });
 
         services.AddHttpClient<IUploadThingService, UploadThingService>();
