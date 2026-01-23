@@ -71,9 +71,6 @@ public static class CsvConstants
     /// <summary>CSV source name identifier.</summary>
     public const string CsvSourceName = "CSV";
 
-    /// <summary>Description for CSV discoverer.</summary>
-    public const string Description = "Discovers content from CSV files";
-
     /// <summary>File system deliverer source name.</summary>
     public const string FileSystemSourceName = "FileSystem";
 
