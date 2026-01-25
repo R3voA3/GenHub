@@ -455,6 +455,12 @@ public class MockLocalContentService : ILocalContentService
 
     /// <inheritdoc/>
     public Task<OperationResult> DeleteLocalContentAsync(string manifestId) => Task.FromResult(OperationResult.CreateSuccess());
+
+    /// <inheritdoc/>
+    public Task<OperationResult<ContentManifest>> UpdateLocalContentManifestAsync(string existingManifestId, string name, string directoryPath, ContentType contentType, GameType targetGame)
+    {
+        return Task.FromResult(OperationResult<ContentManifest>.CreateSuccess(new ContentManifest { Name = name, ContentType = contentType, TargetGame = targetGame }));
+    }
 }
 
 /// <summary>
@@ -809,6 +815,6 @@ public class MockContentStorageService : IContentStorageService
         => Task.FromResult(OperationResult<bool>.CreateSuccess(true));
 
     /// <inheritdoc/>
-    public Task<StorageStats> GetStorageStatsAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new StorageStats());
+    public Task<OperationResult<StorageStats>> GetStorageStatsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(OperationResult<StorageStats>.CreateSuccess(new StorageStats()));
 }

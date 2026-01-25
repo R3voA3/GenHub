@@ -1,3 +1,9 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.Manifest;
@@ -14,6 +20,7 @@ namespace GenHub.Core.Services.Content;
 public class LocalContentService(
     IManifestGenerationService manifestGenerationService,
     IContentStorageService contentStorageService,
+    IContentReconciliationService reconciliationService,
     ILogger<LocalContentService> logger) : ILocalContentService
 {
     /// <summary>
@@ -145,17 +152,60 @@ public class LocalContentService(
     }
 
     /// <inheritdoc />
+    public async Task<OperationResult<ContentManifest>> UpdateLocalContentManifestAsync(
+        string existingManifestId,
+        string name,
+        string directoryPath,
+        ContentType contentType,
+        GameType targetGame)
+    {
+        CancellationToken cancellationToken = default;
+        try
+        {
+            // 1. Create the new manifest/content
+            // We do this FIRST to ensure the new content is valid before deleting the old one
+            var createResult = await CreateLocalContentManifestAsync(directoryPath, name, contentType, targetGame);
+
+            if (!createResult.Success)
+            {
+                return createResult;
+            }
+
+            // 2. Orchestrate Update
+            // This handles Profile ID replacement, CAS reference cleanup,
+            // and removal of the old manifest from the pool.
+            var reconcileResult = await reconciliationService.OrchestrateLocalUpdateAsync(
+                existingManifestId,
+                createResult.Data,
+                cancellationToken);
+
+            if (!reconcileResult.Success)
+            {
+                logger.LogWarning("Local content update orchestration failed for '{ManifestId}': {Error}", existingManifestId, reconcileResult.FirstError);
+
+                // We still return the createResult manifest, but the old one might still be there
+                }
+
+            return createResult;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error updating local content '{ManifestId}'", existingManifestId);
+            return OperationResult<ContentManifest>.CreateFailure($"Failed to update content: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<OperationResult> DeleteLocalContentAsync(string manifestId)
     {
         try
         {
             logger.LogInformation("Deleting local content with manifest ID '{ManifestId}'", manifestId);
 
-            // Deleting local content involves:
-            // 1. Removing the manifest from the storage/pool
-            // 2. Potentially removing the local files if they were managed/copied by GenHub (via CAS)
+            // 1. Reconcile Profiles (Remove reference)
+            await reconciliationService.ReconcileManifestRemovalAsync(manifestId, CancellationToken.None);
 
-            // For now, we primarily just remove the content from the storage service
+            // 2. Remove Content from storage
             var result = await contentStorageService.RemoveContentAsync(ManifestId.Create(manifestId));
 
             if (!result.Success)

@@ -60,4 +60,9 @@ public partial class ContentDisplayItem : ObservableObject
     /// Gets or sets the GameClient ID for profile creation.
     /// </summary>
     public string? GameClientId { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this content can be edited (locally created).
+    /// </summary>
+    public bool IsEditable { get; set; }
 }

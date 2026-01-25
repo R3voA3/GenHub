@@ -277,7 +277,7 @@ public class ContentStorageService : IContentStorageService
     }
 
     /// <inheritdoc/>
-    public async Task<StorageStats> GetStorageStatsAsync(CancellationToken cancellationToken = default)
+    public async Task<OperationResult<StorageStats>> GetStorageStatsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -296,12 +296,12 @@ public class ContentStorageService : IContentStorageService
                 stats.AvailableFreeSpaceBytes = driveInfo.AvailableFreeSpace;
             }
 
-            return await Task.FromResult(stats);
+            return await Task.FromResult(OperationResult<StorageStats>.CreateSuccess(stats));
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to calculate storage stats");
-            return new StorageStats();
+            return OperationResult<StorageStats>.CreateFailure($"Failed to calculate storage stats: {ex.Message}");
         }
     }
 
@@ -435,7 +435,10 @@ public class ContentStorageService : IContentStorageService
             var manifestJson = JsonSerializer.Serialize(manifest, JsonOptions);
             await File.WriteAllTextAsync(manifestPath, manifestJson, cancellationToken);
 
-            _logger.LogInformation("Successfully stored manifest metadata for {ManifestId}", manifest.Id);
+            // Ensure CAS references are tracked even for metadata-only storage
+            await _referenceTracker.TrackManifestReferencesAsync(manifest.Id, manifest, cancellationToken);
+
+            _logger.LogInformation("Successfully stored manifest metadata for {ManifestId} and refreshed CAS tracking", manifest.Id);
             return OperationResult<ContentManifest>.CreateSuccess(manifest);
         }
         catch (Exception ex)

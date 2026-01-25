@@ -418,7 +418,9 @@ public partial class GameProfileItemViewModel : ViewModelBase
                     if (version.Equals(GameClientConstants.AutoDetectedVersion, StringComparison.OrdinalIgnoreCase) ||
                         version.Equals(GameClientConstants.UnknownVersion, StringComparison.OrdinalIgnoreCase) ||
                         version.Equals("Auto-Updated", StringComparison.OrdinalIgnoreCase) ||
-                        version.Contains("Automatically", StringComparison.OrdinalIgnoreCase))
+                        version.Contains("Automatically", StringComparison.OrdinalIgnoreCase) ||
+                        version == "0" ||
+                        version.Equals("v0", StringComparison.OrdinalIgnoreCase))
                     {
                         GameVersion = string.Empty;
                     }
@@ -605,7 +607,9 @@ public partial class GameProfileItemViewModel : ViewModelBase
                     if (version.Equals(GameClientConstants.AutoDetectedVersion, StringComparison.OrdinalIgnoreCase) ||
                         version.Equals(GameClientConstants.UnknownVersion, StringComparison.OrdinalIgnoreCase) ||
                         version.Equals("Auto-Updated", StringComparison.OrdinalIgnoreCase) ||
-                        version.Contains("Automatically", StringComparison.OrdinalIgnoreCase))
+                        version.Contains("Automatically", StringComparison.OrdinalIgnoreCase) ||
+                        version == "0" ||
+                        version.Equals("v0", StringComparison.OrdinalIgnoreCase))
                     {
                         GameVersion = string.Empty;
                     }

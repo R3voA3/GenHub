@@ -18,7 +18,9 @@ using GenHub.Features.Content.Services.ContentProviders;
 using GenHub.Features.Content.Services.ContentResolvers;
 using GenHub.Features.Content.Services.GeneralsOnline;
 using GenHub.Features.Content.Services.GitHub;
+using GenHub.Features.Content.Services.LocalContent;
 using GenHub.Features.Content.Services.Publishers;
+using GenHub.Features.Content.Services.Reconciliation;
 using GenHub.Features.Downloads.ViewModels;
 using GenHub.Features.GitHub.Services;
 using GenHub.Features.Manifest;
@@ -117,6 +119,24 @@ public static class ContentPipelineModule
 
         // Register Local Content Service
         services.AddTransient<ILocalContentService, LocalContentService>();
+
+        // Register Local Content Profile Reconciler
+        services.AddTransient<ILocalContentProfileReconciler, LocalContentProfileReconciler>();
+
+        // Register Unified Content Reconciliation Service
+        services.AddScoped<IContentReconciliationService, ContentReconciliationService>();
+
+        // Reconciliation infrastructure
+        services.AddSingleton<IContentReconciliationOrchestrator, ContentReconciliationOrchestrator>();
+        services.AddSingleton<ICasLifecycleManager, CasLifecycleManager>();
+
+        // Audit log - needs application data path
+        services.AddSingleton<IReconciliationAuditLog>(sp =>
+        {
+            var appConfig = sp.GetRequiredService<IAppConfiguration>();
+            var logger = sp.GetRequiredService<ILogger<GenHub.Features.Content.Services.Reconciliation.FileBasedReconciliationAuditLog>>();
+            return new GenHub.Features.Content.Services.Reconciliation.FileBasedReconciliationAuditLog(appConfig.GetConfiguredDataPath(), logger);
+        });
     }
 
     /// <summary>

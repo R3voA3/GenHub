@@ -3,16 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using CommunityToolkit.Mvvm.Messaging;
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.GameProfiles;
 using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Interfaces.Notifications;
-using GenHub.Core.Interfaces.Workspace;
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
-using GenHub.Core.Models.GameProfile;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
 using Microsoft.Extensions.Logging;
@@ -27,13 +24,12 @@ namespace GenHub.Features.Content.Services.GeneralsOnline;
 public class GeneralsOnlineProfileReconciler(
     ILogger<GeneralsOnlineProfileReconciler> logger,
     GeneralsOnlineUpdateService updateService,
-    IGameProfileManager profileManager,
     IContentManifestPool manifestPool,
     IContentOrchestrator contentOrchestrator,
-    IWorkspaceManager workspaceManager,
+    IContentReconciliationService reconciliationService,
     INotificationService notificationService)
     : IGeneralsOnlineProfileReconciler
-    {
+{
     /// <inheritdoc/>
     public async Task<OperationResult<bool>> CheckAndReconcileIfNeededAsync(
         string triggeringProfileId,
@@ -88,7 +84,6 @@ public class GeneralsOnlineProfileReconciler(
                 oldManifests.Count);
 
             // Step 4: Download and acquire new content
-            // Step 4: Download and acquire new content
             var acquireResult = await AcquireLatestVersionAsync(oldManifests, cancellationToken);
             if (!acquireResult.Success)
             {
@@ -106,10 +101,10 @@ public class GeneralsOnlineProfileReconciler(
                 "[GO Reconciler] Successfully acquired {Count} new manifests",
                 newManifests.Count);
 
-            // Step 5: Update all affected profiles
-            var updateProfilesResult = await UpdateAllAffectedProfilesAsync(
-                oldManifests,
-                newManifests,
+            // Step 5: Update all affected profiles using unified service
+            var manifestMapping = BuildManifestMapping(oldManifests, newManifests);
+            var updateProfilesResult = await reconciliationService.ReconcileBulkManifestReplacementAsync(
+                manifestMapping,
                 cancellationToken);
 
             if (!updateProfilesResult.Success)
@@ -123,7 +118,10 @@ public class GeneralsOnlineProfileReconciler(
             // Step 6: Remove old manifests from pool (excluding any that match the new ones)
             await RemoveOldManifestsAsync(oldManifests, newManifests, cancellationToken);
 
-            // Step 7: Show success notification
+            // Step 7: Run garbage collection AFTER untracking is complete
+            await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
+
+            // Step 8: Show success notification
             notificationService.ShowSuccess(
                 "GeneralsOnline Updated",
                 $"Successfully updated to version {updateResult.LatestVersion}. {updateProfilesResult.Data} profiles updated.",
@@ -157,7 +155,7 @@ public class GeneralsOnlineProfileReconciler(
 
         foreach (var oldManifest in oldManifests)
         {
-            // Find corresponding new manifest by matching content type and name pattern
+            // Find corresponding new manifest by matching content type and variant
             var newManifest = newManifests.FirstOrDefault(n =>
                 n.ContentType == oldManifest.ContentType &&
                 MatchesByVariant(oldManifest.Id.Value, n.Id.Value));
@@ -176,11 +174,8 @@ public class GeneralsOnlineProfileReconciler(
     /// </summary>
     private static bool MatchesByVariant(string oldId, string newId)
     {
-        // Extract variant suffix from manifest ID
-        // Format: 1.{version}.generalsonline.{contenttype}.{variant}
         var oldVariant = ExtractVariant(oldId);
         var newVariant = ExtractVariant(newId);
-
         return string.Equals(oldVariant, newVariant, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -189,16 +184,10 @@ public class GeneralsOnlineProfileReconciler(
     /// </summary>
     private static string? ExtractVariant(string manifestId)
     {
-        // Manifest ID formats:
-        // Real: 1.1220251.generalsonline.gameclient.30hz
-        // Spoofed: 1.101201.generalsonline.gameclient.30hz
-        // File: ...manifest.json (should not be here but just in case)
         var parts = manifestId.Split('.');
         if (parts.Length == 0) return null;
 
         var lastPart = parts[^1];
-
-        // Handle common variants directly
         if (lastPart.Equals("30hz", StringComparison.OrdinalIgnoreCase) ||
             lastPart.Equals("60hz", StringComparison.OrdinalIgnoreCase) ||
             lastPart.Equals("quickmatchmaps", StringComparison.OrdinalIgnoreCase))
@@ -206,59 +195,7 @@ public class GeneralsOnlineProfileReconciler(
             return lastPart;
         }
 
-        // If something like .manifest.json appended (though ID shouldn't have it)
-        if (parts.Length > 1)
-        {
-             return parts[^1];
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Checks if a profile uses any GeneralsOnline content.
-    /// </summary>
-    private static bool ProfileUsesGeneralsOnline(
-        GameProfile profile,
-        List<ContentManifest> goManifests)
-    {
-        if (profile.EnabledContentIds == null || profile.EnabledContentIds.Count == 0)
-        {
-            return false;
-        }
-
-        var goManifestIds = goManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return profile.EnabledContentIds.Any(id => goManifestIds.Contains(id));
-    }
-
-    /// <summary>
-    /// Updates content IDs by replacing old GeneralsOnline IDs with new ones.
-    /// </summary>
-    private static List<string> UpdateContentIds(
-        List<string>? currentIds,
-        Dictionary<string, string> mapping)
-    {
-        if (currentIds == null || currentIds.Count == 0)
-        {
-            return [];
-        }
-
-        var newIds = new List<string>();
-
-        foreach (var id in currentIds)
-        {
-            if (mapping.TryGetValue(id, out var newId))
-            {
-                newIds.Add(newId);
-            }
-            else
-            {
-                // Keep non-GO content IDs as-is
-                newIds.Add(id);
-            }
-        }
-
-        return newIds;
+        return parts.Length > 1 ? parts[^1] : null;
     }
 
     /// <summary>
@@ -276,17 +213,12 @@ public class GeneralsOnlineProfileReconciler(
         return [.. manifestsResult.Data
             .Where(m =>
                 m.Publisher?.PublisherType?.Equals(PublisherTypeConstants.GeneralsOnline, StringComparison.OrdinalIgnoreCase) == true ||
-
-                // Check ID pattern
                 m.Id.Value.Contains(".generalsonline.", StringComparison.OrdinalIgnoreCase) ||
-
-                // Check Name fallback
                 m.Name.Contains("GeneralsOnline", StringComparison.OrdinalIgnoreCase))];
     }
 
     /// <summary>
     /// Acquires the latest GeneralsOnline version by searching and downloading.
-    /// Returns all new manifests found in the pool that weren't there before.
     /// </summary>
     private async Task<OperationResult<List<ContentManifest>>> AcquireLatestVersionAsync(
         List<ContentManifest> oldManifests,
@@ -294,7 +226,6 @@ public class GeneralsOnlineProfileReconciler(
     {
         try
         {
-            // Search for GeneralsOnline content
             var searchQuery = new ContentSearchQuery
             {
                 ProviderName = GeneralsOnlineConstants.PublisherType,
@@ -309,30 +240,11 @@ public class GeneralsOnlineProfileReconciler(
                     "No GeneralsOnline content found from provider");
             }
 
-            // Acquire each search result (triggers provider to install 30Hz, 60Hz, MapPack)
             foreach (var result in searchResult.Data)
             {
-                logger.LogInformation(
-                    "[GO Reconciler] Acquiring content: {Name} ({ContentType})",
-                    result.Name,
-                    result.ContentType);
-
-                var acquireResult = await contentOrchestrator.AcquireContentAsync(
-                    result,
-                    progress: null,
-                    cancellationToken);
-
-                if (!acquireResult.Success)
-                {
-                    logger.LogWarning(
-                        "[GO Reconciler] Failed to acquire {Name}: {Error}",
-                        result.Name,
-                        acquireResult.FirstError);
-                }
+                await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
             }
 
-            // Rationale: The provider might create multiple manifests (variants/dependencies)
-            // We scan the pool to find EVERYTHING that is GeneralsOnline and NOT in our old list.
             var allGoManifests = await FindGeneralsOnlineManifestsAsync(cancellationToken);
             var oldIds = oldManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -346,176 +258,35 @@ public class GeneralsOnlineProfileReconciler(
                     "Acquisition completed but no new GeneralsOnline manifests were found in the pool");
             }
 
-            logger.LogInformation(
-                "[GO Reconciler] Identified {Count} new manifests in pool: {Manifests}",
-                newManifests.Count,
-                string.Join(", ", newManifests.Select(m => m.Id.Value)));
-
             return OperationResult<List<ContentManifest>>.CreateSuccess(newManifests);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "[GO Reconciler] Failed to acquire latest version");
-            return OperationResult<List<ContentManifest>>.CreateFailure(
-                $"Failed to acquire latest version: {ex.Message}");
+            return OperationResult<List<ContentManifest>>.CreateFailure($"Failed to acquire latest version: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Updates all profiles that use GeneralsOnline content.
-    /// </summary>
-    private async Task<OperationResult<int>> UpdateAllAffectedProfilesAsync(
-        List<ContentManifest> oldManifests,
-        List<ContentManifest> newManifests,
-        CancellationToken cancellationToken)
-    {
-        var profilesResult = await profileManager.GetAllProfilesAsync(cancellationToken);
-        if (!profilesResult.Success || profilesResult.Data == null)
-        {
-            return OperationResult<int>.CreateFailure(
-                $"Failed to get profiles: {profilesResult.FirstError}");
-        }
-
-        // Build mapping from old manifest IDs to new manifest IDs
-        var manifestMapping = BuildManifestMapping(oldManifests, newManifests);
-
-        var updatedCount = 0;
-        var errors = new List<string>();
-
-        foreach (var profile in profilesResult.Data)
-        {
-            // Check if profile uses any GeneralsOnline content
-            if (!ProfileUsesGeneralsOnline(profile, oldManifests))
-            {
-                continue;
-            }
-
-            logger.LogInformation(
-                "[GO Reconciler] Updating profile: {ProfileName} ({ProfileId})",
-                profile.Name,
-                profile.Id);
-
-            try
-            {
-                // Update enabled content IDs
-                var newContentIds = UpdateContentIds(profile.EnabledContentIds, manifestMapping);
-
-                // Cleanup workspace if it exists
-                if (!string.IsNullOrEmpty(profile.ActiveWorkspaceId))
-                {
-                    logger.LogDebug(
-                        "[GO Reconciler] Cleaning up workspace for profile {ProfileId}",
-                        profile.Id);
-
-                    var cleanupResult = await workspaceManager.CleanupWorkspaceAsync(
-                        profile.ActiveWorkspaceId,
-                        cancellationToken);
-
-                    if (!cleanupResult.Success)
-                    {
-                        logger.LogWarning(
-                            "[GO Reconciler] Failed to cleanup workspace for profile {ProfileId}: {Error}",
-                            profile.Id,
-                            cleanupResult.FirstError);
-                    }
-                }
-
-                // Update the profile
-                var updateRequest = new UpdateProfileRequest
-                {
-                    EnabledContentIds = newContentIds,
-
-                    // Clear active workspace so it will be recreated on next launch
-                    ActiveWorkspaceId = string.Empty,
-                };
-
-                var updateResult = await profileManager.UpdateProfileAsync(
-                    profile.Id,
-                    updateRequest,
-                    cancellationToken);
-
-                if (updateResult.Success)
-                {
-                    updatedCount++;
-                    logger.LogInformation(
-                        "[GO Reconciler] Successfully updated profile: {ProfileName}",
-                        profile.Name);
-
-                    // Notify UI to refresh this profile's ViewModel
-                    try
-                    {
-                        var updatedProfileResult = await profileManager.GetProfileAsync(profile.Id, cancellationToken);
-                        if (updatedProfileResult.Success && updatedProfileResult.Data is GameProfile updatedGameProfile)
-                        {
-                            WeakReferenceMessenger.Default.Send(new ProfileUpdatedMessage(updatedGameProfile));
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "[GO Reconciler] Failed to send ProfileUpdatedMessage for {ProfileName}", profile.Name);
-                    }
-                }
-                else
-                {
-                    errors.Add($"Failed to update profile '{profile.Name}': {updateResult.FirstError}");
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[GO Reconciler] Error updating profile {ProfileId}", profile.Id);
-                errors.Add($"Error updating profile '{profile.Name}': {ex.Message}");
-            }
-        }
-
-        if (errors.Count > 0 && updatedCount == 0)
-        {
-            return OperationResult<int>.CreateFailure(string.Join("; ", errors));
-        }
-
-        if (errors.Count > 0)
-        {
-            logger.LogWarning(
-                "[GO Reconciler] Updated {Count} profiles with {ErrorCount} errors",
-                updatedCount,
-                errors.Count);
-        }
-
-        return OperationResult<int>.CreateSuccess(updatedCount);
-    }
-
-    /// <summary>
-    /// Removes old GeneralsOnline manifests from the manifest pool, unless they are part of the new update.
+    /// Removes old GeneralsOnline manifests from the manifest pool.
     /// </summary>
     private async Task RemoveOldManifestsAsync(
         List<ContentManifest> oldManifests,
         List<ContentManifest> newManifests,
         CancellationToken cancellationToken)
     {
-        // Create lookup for new IDs to avoid accidental deletion of fresh content
         var newManifestIds = newManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var manifest in oldManifests)
         {
-            if (newManifestIds.Contains(manifest.Id.Value))
-            {
-                logger.LogInformation(
-                    "[GO Reconciler] Skipping removal of manifest {ManifestId} as it matches new content",
-                    manifest.Id.Value);
-                continue;
-            }
+            if (newManifestIds.Contains(manifest.Id.Value)) continue;
 
-            logger.LogInformation(
-                "[GO Reconciler] Removing old manifest: {ManifestId} ({Name})",
-                manifest.Id.Value,
-                manifest.Name);
+            logger.LogInformation("[GO Reconciler] Removing old manifest: {ManifestId}", manifest.Id.Value);
 
             var removeResult = await manifestPool.RemoveManifestAsync(manifest.Id, cancellationToken);
             if (!removeResult.Success)
             {
-                logger.LogWarning(
-                    "[GO Reconciler] Failed to remove old manifest {ManifestId}: {Error}",
-                    manifest.Id.Value,
-                    removeResult.FirstError);
+                logger.LogWarning("[GO Reconciler] Failed to remove old manifest {ManifestId}: {Error}", manifest.Id.Value, removeResult.FirstError);
             }
         }
     }

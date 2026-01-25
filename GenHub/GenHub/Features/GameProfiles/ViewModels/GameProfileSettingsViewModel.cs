@@ -130,6 +130,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
             SourceId = coreItem.SourceId,
             GameClientId = coreItem.GameClientId,
             IsEnabled = coreItem.IsEnabled,
+            IsEditable = coreItem.Publisher == Core.Services.Content.LocalContentService.LocalPublisherName,
         };
     }
 
@@ -142,6 +143,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
     private readonly IContentManifestPool? _manifestPool;
     private readonly IContentStorageService? _contentStorageService;
     private readonly ILocalContentService? _localContentService;
+    private readonly Core.Interfaces.Content.ILocalContentProfileReconciler? _localContentProfileReconciler;
     private readonly ILogger<GameProfileSettingsViewModel>? _logger;
     private readonly ILogger<GameSettingsViewModel>? _gameSettingsLogger;
 
@@ -177,6 +179,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
     /// <param name="manifestPool">The manifest pool.</param>
     /// <param name="contentStorageService">The content storage service.</param>
     /// <param name="localContentService">The local content service.</param>
+    /// <param name="localContentProfileReconciler">The local content profile reconciler.</param>
     /// <param name="logger">The logger for this view model.</param>
     /// <param name="gameSettingsLogger">The logger for the game settings view model.</param>
     public GameProfileSettingsViewModel(
@@ -189,6 +192,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
         IContentManifestPool? manifestPool,
         IContentStorageService? contentStorageService,
         ILocalContentService? localContentService,
+        Core.Interfaces.Content.ILocalContentProfileReconciler? localContentProfileReconciler,
         ILogger<GameProfileSettingsViewModel>? logger,
         ILogger<GameSettingsViewModel>? gameSettingsLogger)
     {
@@ -201,6 +205,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
         _manifestPool = manifestPool;
         _contentStorageService = contentStorageService;
         _localContentService = localContentService;
+        _localContentProfileReconciler = localContentProfileReconciler;
         _logger = logger;
         _gameSettingsLogger = gameSettingsLogger;
 
@@ -289,6 +294,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
                             SourceId = existing.SourceId,
                             GameClientId = existing.GameClientId,
                             Version = existing.Version,
+                            IsEditable = existing.IsEditable,
                         });
                     }
                 }

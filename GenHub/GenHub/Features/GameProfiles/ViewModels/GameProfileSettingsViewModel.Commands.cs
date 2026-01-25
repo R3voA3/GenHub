@@ -643,7 +643,9 @@ public partial class GameProfileSettingsViewModel
 
             if (dialogOwner == null) return;
 
-            var vm = new AddLocalContentViewModel(_localContentService, null);
+            if (dialogOwner == null) return;
+
+            var vm = new AddLocalContentViewModel(_localContentService, _contentStorageService, null);
             var window = new Views.AddLocalContentWindow
             {
                 DataContext = vm,
@@ -665,6 +667,9 @@ public partial class GameProfileSettingsViewModel
                 StatusMessage = $"Added {contentItem.DisplayName}";
                 await EnableContentInternal(contentItem, bypassLoadingGuard: true);
 
+                // Refresh filters in case this was the first item of its type
+                await RefreshVisibleFiltersAsync();
+
                 _localNotificationService?.ShowSuccess(
                      "Content Added",
                      $"'{contentItem.DisplayName}' has been added successfully.");
@@ -674,6 +679,52 @@ public partial class GameProfileSettingsViewModel
         {
             _logger?.LogError(ex, "Error opening Add Local Content dialog");
             StatusMessage = "Error opening dialog";
+        }
+    }
+
+    [RelayCommand]
+    private async Task EditContent(ContentDisplayItem? contentItem)
+    {
+        if (contentItem == null) return;
+
+        try
+        {
+            if (_localContentService == null)
+            {
+                StatusMessage = "Local content service unavailable";
+                return;
+            }
+
+            var owner = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow
+                : null;
+
+            if (owner == null) return;
+
+            var vm = new AddLocalContentViewModel(_localContentService, _contentStorageService, null);
+            await vm.LoadFromManifestAsync(contentItem);
+
+            var window = new Views.AddLocalContentWindow
+            {
+                DataContext = vm,
+            };
+
+            var result = await window.ShowDialog<bool>(owner);
+
+            if (result)
+            {
+                _logger?.LogInformation("Edited local content: {Name}", contentItem.DisplayName);
+                StatusMessage = "Content updated";
+                _localNotificationService?.ShowSuccess("Content Updated", $"'{contentItem.DisplayName}' has been updated.");
+
+                // Reload content and filters to reflect changes (e.g. type change)
+                await RefreshFiltersAndContentAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error editing content {Name}", contentItem.DisplayName);
+            StatusMessage = "Error editing content";
         }
     }
 
@@ -714,7 +765,13 @@ public partial class GameProfileSettingsViewModel
             if (result.Success)
             {
                  IsAddLocalContentDialogOpen = false;
-                 await LoadAvailableContentAsync();
+
+                 // Refresh filters and content to ensure new type appears and list updates
+                 await RefreshFiltersAndContentAsync();
+
+                 // If the added item matches current filter, ensure it's selected/visible (handled by LoadAvailableContent)
+                 // If the item introduced a new filter, user might want to switch to it.
+                 // For now, just refreshing ensures it's reachable.
             }
             else
             {

@@ -74,5 +74,5 @@ public interface IContentStorageService
     /// Fields include manifest count (logical manifests), total file count (all files under the storage root),
     /// total size in bytes, deduplication savings and available free disk space.
     /// </returns>
-    Task<StorageStats> GetStorageStatsAsync(CancellationToken cancellationToken = default);
+    Task<OperationResult<StorageStats>> GetStorageStatsAsync(CancellationToken cancellationToken = default);
 }

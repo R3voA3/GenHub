@@ -74,6 +74,7 @@ public class GameProfileSettingsViewModelTests
             null, // IContentManifestPool
             null, // IContentStorageService
             null, // ILocalContentService
+            null, // ILocalContentProfileReconciler
             nullLogger,
             gameSettingsLogger);
 
@@ -114,6 +115,7 @@ public class GameProfileSettingsViewModelTests
             null, // IContentManifestPool
             null, // IContentStorageService
             null, // ILocalContentService
+            null, // ILocalContentProfileReconciler
             nullLogger,
             gameSettingsLogger);
 

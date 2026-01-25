@@ -296,7 +296,7 @@ public static class DemoViewModelFactory
         var mockService = new MockLocalContentService();
         var mockLogger = new MockLogger<AddLocalContentViewModel>();
 
-        return new AddLocalContentViewModel(mockService, mockLogger);
+        return new AddLocalContentViewModel(mockService, null, mockLogger);
     }
 
     /// <summary>
@@ -338,6 +338,7 @@ public static class DemoViewModelFactory
             mockManifests,
             mockStorage,
             mockLocalContent,
+            null, // reconciler
             mockLogger,
             mockSettingsLogger);
 
@@ -379,6 +380,7 @@ public static class DemoViewModelFactory
             mockManifests,
             mockStorage,
             mockLocalContent,
+            null, // reconciler
             mockLogger,
             mockSettingsLogger);
 
@@ -423,6 +425,7 @@ public static class DemoViewModelFactory
                 mockManifests,
                 mockStorage,
                 mockLocalContent,
+                null, // reconciler
                 mockLogger,
                 mockSettingsLogger);
 

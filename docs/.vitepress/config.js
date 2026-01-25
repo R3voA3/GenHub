@@ -45,6 +45,7 @@ export default withMermaid(
                         { text: 'Overview', link: '/features/index' },
                         { text: 'App Update & Installer', link: '/velopack-integration' },
                         { text: 'Content System', link: '/features/content' },
+                        { text: 'Content Reconciliation', link: '/features/reconciliation' },
                         { text: 'Manifest Service', link: '/features/manifest' },
                         { text: 'Storage & CAS', link: '/features/storage' },
                         { text: 'Validation', link: '/features/validation' },

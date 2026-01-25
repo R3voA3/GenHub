@@ -4,8 +4,11 @@ using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
+using GenHub.Core.Models.Storage;
 using GenHub.Features.Manifest;
+using GenHub.Features.Storage.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using ContentType = GenHub.Core.Models.Enums.ContentType;
 
@@ -17,6 +20,7 @@ namespace GenHub.Tests.Core.Features.Manifest;
 public class ContentManifestPoolTests : IDisposable
 {
     private readonly Mock<IContentStorageService> _storageServiceMock;
+    private readonly Mock<CasReferenceTracker> _referenceTrackerMock;
     private readonly Mock<ILogger<ContentManifestPool>> _loggerMock;
     private readonly ContentManifestPool _manifestPool;
     private readonly string _tempDirectory;
@@ -28,7 +32,16 @@ public class ContentManifestPoolTests : IDisposable
     {
         _storageServiceMock = new Mock<IContentStorageService>();
         _loggerMock = new Mock<ILogger<ContentManifestPool>>();
-        _manifestPool = new ContentManifestPool(_storageServiceMock.Object, _loggerMock.Object);
+
+        // Mock CasReferenceTracker's dependencies to allow partial mock/real instance
+        var configMock = new Mock<IOptions<GenHub.Core.Models.Storage.CasConfiguration>>();
+        configMock.Setup(x => x.Value).Returns(new GenHub.Core.Models.Storage.CasConfiguration { CasRootPath = Path.Combine(Path.GetTempPath(), "GenHubTestCAS") });
+        var trackerLoggerMock = new Mock<ILogger<CasReferenceTracker>>();
+
+        // Use Moq's ability to provide constructor arguments for concrete classes
+        _referenceTrackerMock = new Mock<CasReferenceTracker>(configMock.Object, trackerLoggerMock.Object);
+
+        _manifestPool = new ContentManifestPool(_storageServiceMock.Object, _referenceTrackerMock.Object, _loggerMock.Object);
         _tempDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_tempDirectory);
     }

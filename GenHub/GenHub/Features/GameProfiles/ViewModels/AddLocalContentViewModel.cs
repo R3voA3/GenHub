@@ -17,9 +17,12 @@ namespace GenHub.Features.GameProfiles.ViewModels;
 /// View model for the "Add Local Content" dialog.
 /// </summary>
 /// <param name="localContentService">Service for handling local content operations.</param>
+/// <param name="contentStorageService">Service for content storage operations.</param>
+
 /// <param name="logger">Logger instance.</param>
 public partial class AddLocalContentViewModel(
     ILocalContentService localContentService,
+    IContentStorageService? contentStorageService,
     ILogger<AddLocalContentViewModel>? logger = null) : ObservableObject
 {
     /// <summary>
@@ -77,6 +80,23 @@ public partial class AddLocalContentViewModel(
 
         return count;
     }
+
+    private string? _originalManifestId;
+
+    /// <summary>
+    /// Gets a value indicating whether we are editing existing content.
+    /// </summary>
+    public bool IsEditing => _originalManifestId != null;
+
+    /// <summary>
+    /// Gets the title for the dialog.
+    /// </summary>
+    public string DialogTitle => IsEditing ? "Edit Local Content" : "Add Local Content";
+
+    /// <summary>
+    /// Gets the text to display on the action button.
+    /// </summary>
+    public string ActionButtonText => IsEditing ? "Save Changes" : "Add to Library";
 
     private readonly string _stagingPath = Path.Combine(Path.GetTempPath(), "GenHub_Staging_" + Guid.NewGuid());
 
@@ -207,6 +227,67 @@ public partial class AddLocalContentViewModel(
     /// Gets or sets the action to browse for files.
     /// </summary>
     public Func<Task<IReadOnlyList<string>?>>? BrowseFileAction { get; set; }
+
+    /// <summary>
+    /// Loads existing content for editing.
+    /// </summary>
+    /// <param name="item">The item to load.</param>
+    /// <returns>A task representing the operation.</returns>
+    public async Task LoadFromManifestAsync(ContentDisplayItem item)
+    {
+        if (contentStorageService == null)
+        {
+            StatusMessage = "Storage service unavailable.";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "Loading existing content...";
+
+            _originalManifestId = item.ManifestId.Value;
+            ContentName = item.DisplayName ?? string.Empty;
+            SelectedContentType = item.ContentType;
+            SelectedGameType = item.GameType;
+
+            OnPropertyChanged(nameof(IsEditing));
+            OnPropertyChanged(nameof(DialogTitle));
+            OnPropertyChanged(nameof(ActionButtonText));
+
+            // Prepare staging directory
+            if (Directory.Exists(_stagingPath))
+            {
+                Directory.Delete(_stagingPath, true);
+            }
+
+            Directory.CreateDirectory(_stagingPath);
+
+            // Retrieve content from CAS to staging
+            var result = await contentStorageService.RetrieveContentAsync(
+                Core.Models.Manifest.ManifestId.Create(_originalManifestId),
+                _stagingPath);
+
+            if (result.Success)
+            {
+                StatusMessage = "Success!";
+                await RefreshStagingTreeAsync();
+            }
+            else
+            {
+                StatusMessage = $"Failed to load content: {result.FirstError}";
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Error loading content for editing");
+            StatusMessage = $"Error loading content: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     /// <summary>
     /// Imports content from the specified path into the staging directory.
@@ -440,16 +521,30 @@ public partial class AddLocalContentViewModel(
             {
                 if (p.TotalCount > 0)
                 {
-                    StatusMessage = $"Importing: {p.Percentage:0}% ({p.ProcessedCount}/{p.TotalCount} files)";
+                    StatusMessage = $"{(IsEditing ? "Updating" : "Importing")}: {p.Percentage:0}% ({p.ProcessedCount}/{p.TotalCount} files)";
                 }
             });
 
-            var result = await localContentService.CreateLocalContentManifestAsync(
-                _stagingPath,
-                ContentName,
-                SelectedContentType,
-                targetGame,
-                progress);
+            GenHub.Core.Models.Results.OperationResult<GenHub.Core.Models.Manifest.ContentManifest> result;
+
+            if (IsEditing && _originalManifestId != null)
+            {
+                 result = await localContentService.UpdateLocalContentManifestAsync(
+                    _originalManifestId,
+                    ContentName,
+                    _stagingPath,
+                    SelectedContentType,
+                    targetGame);
+            }
+            else
+            {
+                result = await localContentService.CreateLocalContentManifestAsync(
+                    _stagingPath,
+                    ContentName,
+                    SelectedContentType,
+                    targetGame,
+                    progress);
+            }
 
             if (result.Success)
             {
@@ -664,5 +759,26 @@ public partial class AddLocalContentViewModel(
             SelectedExecutableItem = firstExe;
             logger?.LogInformation("Auto-selected first executable: {Name}", firstExe.Name);
         }
+    }
+
+    private void CloseDialog(bool result)
+    {
+        RequestClose?.Invoke(this, result);
+    }
+
+    private ContentDisplayItem ConvertToDisplayItem(Core.Models.Manifest.ContentManifest manifest)
+    {
+        return new ContentDisplayItem
+        {
+            ManifestId = Core.Models.Manifest.ManifestId.Create(manifest.Id),
+            DisplayName = manifest.Name ?? ContentName,
+            ContentType = manifest.ContentType,
+            GameType = manifest.TargetGame,
+            InstallationType = GameInstallationType.Unknown,
+            Publisher = manifest.Publisher?.Name ?? "GenHub (Local)",
+            Version = manifest.Version ?? "1.0.0",
+            SourceId = SourcePath,
+            IsEnabled = false,
+        };
     }
 }

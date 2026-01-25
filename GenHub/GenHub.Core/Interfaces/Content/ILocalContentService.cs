@@ -51,6 +51,22 @@ public interface ILocalContentService
     Task<OperationResult> DeleteLocalContentAsync(string manifestId);
 
     /// <summary>
+    /// Updates an existing local content item.
+    /// </summary>
+    /// <param name="existingManifestId">The ID of the manifest to update.</param>
+    /// <param name="name">The new display name.</param>
+    /// <param name="directoryPath">The path to the content directory.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <param name="targetGame">The target game.</param>
+    /// <returns>A result containing the updated manifest.</returns>
+    Task<OperationResult<ContentManifest>> UpdateLocalContentManifestAsync(
+        string existingManifestId,
+        string name,
+        string directoryPath,
+        ContentType contentType,
+        GameType targetGame);
+
+    /// <summary>
     /// Gets the allowed content types for local content creation.
     /// </summary>
     IReadOnlyList<ContentType> AllowedContentTypes { get; }
