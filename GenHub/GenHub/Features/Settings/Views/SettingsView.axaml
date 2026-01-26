@@ -9,11 +9,12 @@
              x:DataType="vm:SettingsViewModel"
              Focusable="True">
 
-  <UserControl.Resources>
-    <converters:NullableIntConverter x:Key="NullableIntConverter" />
-    <converters:NullableDoubleConverter x:Key="NullableDoubleConverter" />
-    <converters:TrustLevelToColorConverter x:Key="TrustLevelToColorConverter" />
-  </UserControl.Resources>
+    <UserControl.Resources>
+        <converters:NullableIntConverter x:Key="NullableIntConverter" />
+        <converters:NullableDoubleConverter x:Key="NullableDoubleConverter" />
+        <converters:TrustLevelToColorConverter x:Key="TrustLevelToColorConverter" />
+        <converters:StringToImageConverter x:Key="StringToImageConverter" />
+    </UserControl.Resources>
 
   <UserControl.Styles>
     <Style Selector="Border.settings-card">

@@ -64,4 +64,9 @@ public static class FileTypes
     /// File extension for user data manifest files.
     /// </summary>
     public const string UserDataManifestExtension = ".userdata.json";
+
+    /// <summary>
+    /// File name for publisher subscriptions.
+    /// </summary>
+    public const string SubscriptionsFileName = "subscriptions.json";
 }

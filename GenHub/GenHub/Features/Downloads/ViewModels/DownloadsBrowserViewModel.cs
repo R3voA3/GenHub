@@ -366,7 +366,17 @@ public partial class DownloadsBrowserViewModel(
                     foreach (var item in result.Data.Items)
                     {
                         var itemId = item.Id ?? string.Empty;
-                        if (existingIds.Contains(itemId)) continue;
+                        bool alreadyExists;
+                        lock (lockObj)
+                        {
+                            alreadyExists = existingIds.Contains(itemId);
+                            if (!alreadyExists)
+                            {
+                                existingIds.Add(itemId);
+                            }
+                        }
+
+                        if (alreadyExists) continue;
 
                         var vm = new ContentGridItemViewModel(item)
                         {
@@ -380,7 +390,6 @@ public partial class DownloadsBrowserViewModel(
                         vm.CurrentState = state;
 
                         vmItems.Add(vm);
-                        lock (lockObj) { existingIds.Add(itemId); }
                     }
 
                     if (result.Data.HasMoreItems)

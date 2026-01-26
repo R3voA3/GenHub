@@ -44,7 +44,7 @@ public class GeneralsOnlineManifestFactory(
         var websiteUrl = provider?.Endpoints.WebsiteUrl ?? GeneralsOnlineConstants.WebsiteUrl;
         var supportUrl = provider?.Endpoints.GetEndpoint(ProviderEndpointConstants.SupportUrl) ?? GeneralsOnlineConstants.SupportUrl;
         var downloadPageUrl = provider?.Endpoints.GetEndpoint(ProviderEndpointConstants.DownloadPageUrl) ?? GeneralsOnlineConstants.DownloadPageUrl;
-        var iconUrl = GeneralsOnlineConstants.LogoSource;
+        var iconUrl = provider?.Endpoints.GetEndpoint("iconUrl") ?? GeneralsOnlineConstants.LogoSource;
         var coverSource = provider?.Endpoints.GetEndpoint(ProviderEndpointConstants.CoverUrl) ?? GeneralsOnlineConstants.CoverSource;
         var description = provider?.Description ?? GeneralsOnlineConstants.ShortDescription;
         var tags = provider?.DefaultTags ?? [.. GeneralsOnlineConstants.Tags];

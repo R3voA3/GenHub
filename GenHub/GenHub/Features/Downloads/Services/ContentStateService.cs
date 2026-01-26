@@ -40,7 +40,7 @@ public sealed class ContentStateService(
             item.ProviderName ?? "unknown",
             item.ContentType,
             item.Name ?? item.Id ?? "unknown",
-            releaseDate);
+            releaseDate == DateTime.MinValue ? DateTime.Now : releaseDate);
 
         _logger.LogDebug(
             "Generated prospective manifest ID: {ManifestId} for content: {ContentName}",
@@ -218,6 +218,16 @@ public sealed class ContentStateService(
         {
             isNewerAvailable = prospectiveInt > localInt;
         }
+        else
+        {
+            // Try semantic version comparison
+            if (Version.TryParse(prospectiveVersion, out var prospectiveSemVer) &&
+                Version.TryParse(bestMatchVersion, out var localSemVer))
+            {
+                isNewerAvailable = prospectiveSemVer > localSemVer;
+            }
+        }
+
 
         _logger.LogDebug(
             "Found matching manifest: {ManifestId}, local version: {LocalVersion}, prospective version: {ProspectiveVersion}, update available: {UpdateAvailable}",

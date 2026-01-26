@@ -42,11 +42,7 @@ public class ModDBResolver(
         ContentSearchResult discoveredItem,
         CancellationToken cancellationToken = default)
     {
-        // [TEMP] DEBUG: ResolveAsync entry point
-        _logger.LogInformation(
-            "[TEMP] ModDBResolver.ResolveAsync called - Item: {Name}, SourceUrl: {Url}",
-            discoveredItem?.Name,
-            discoveredItem?.SourceUrl);
+
 
         if (discoveredItem?.SourceUrl == null)
         {

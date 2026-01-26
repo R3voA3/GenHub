@@ -104,7 +104,7 @@ public partial class ModDBManifestFactory(
 
         // 4. Generate manifest ID with release date using ManifestIdGenerator
         var manifestId = ManifestIdGenerator.GeneratePublisherContentId(
-            "moddb",
+            ModDBConstants.PublisherPrefix,
             details.ContentType,
             contentName,
             releaseDate);

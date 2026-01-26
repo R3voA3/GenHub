@@ -141,12 +141,8 @@ public static class ContentPipelineModule
         services.AddTransient<IContentResolver>(sp => sp.GetRequiredService<GenHub.Features.Content.Services.Catalog.GenericCatalogResolver>());
 
         // Register ViewModels for catalog management
-        services.AddTransient<GenHub.Features.Content.ViewModels.Catalog.SubscriptionConfirmationViewModel>(sp =>
-        {
-            // Note: This is usually created via ActivatorUtilities to pass the URL,
-            // but we register the type itself just in case or for simple resolution.
-            return null!; // We'll use ActivatorUtilities.CreateInstance in App.axaml.cs
-        });
+        // Note: SubscriptionConfirmationViewModel requires runtime parameters (catalogUrl),
+        // so it should be created via ActivatorUtilities.CreateInstance, not resolved from DI.
     }
 
     /// <summary>
@@ -303,7 +299,8 @@ public static class ContentPipelineModule
 
         // Register ModDB page parser
         services.AddSingleton<ModDBPageParser>();
-        services.AddSingleton<IWebPageParser>(sp => sp.GetRequiredService<ModDBPageParser>());
+        // Register ModDB page parser
+        services.AddSingleton<ModDBPageParser>();
 
         // Register ModDB discoverer (concrete and interface) with named HttpClient
         // Register ModDB discoverer (concrete and interface)
@@ -361,8 +358,8 @@ public static class ContentPipelineModule
         // Register AODMaps page parser (Concrete)
         services.AddSingleton<AODMapsPageParser>();
 
-        // Register as interface as well if needed by generic components, but be careful of overlapping
-        services.AddSingleton<IWebPageParser>(sp => sp.GetRequiredService<AODMapsPageParser>());
+        // Register AODMaps page parser (Concrete)
+        services.AddSingleton<AODMapsPageParser>();
 
         // Register AODMaps discoverer
         services.AddSingleton<GenHub.Features.Content.Services.ContentDiscoverers.AODMapsDiscoverer>();

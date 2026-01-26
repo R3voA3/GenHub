@@ -20,7 +20,7 @@ When adding new constants to the codebase:
 
 1. Update the corresponding C# class in `GenHub.Core/Constants`.
 2. Update `docs/dev/constants.md` by adding a new `## ClassName Class` section.
-3. Use markdown tables for listing constants and their values/descriptions.
+3. Use Markdown tables for listing constants and their values/descriptions.
 
 ### Model Documentation
 

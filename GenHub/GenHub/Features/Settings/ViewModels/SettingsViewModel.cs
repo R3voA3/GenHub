@@ -61,7 +61,6 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly IWorkspaceManager _workspaceManager;
     private readonly IContentManifestPool _manifestPool;
     private readonly IVelopackUpdateManager _updateManager;
-    private readonly IGitHubApiClient _githubClient;
     private readonly IPublisherSubscriptionStore _subscriptionStore;
     private readonly IPublisherCatalogRefreshService _catalogRefreshService;
     private readonly INotificationService _notificationService;
@@ -241,7 +240,6 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         IVelopackUpdateManager updateManager,
         IPublisherSubscriptionStore subscriptionStore,
         IPublisherCatalogRefreshService catalogRefreshService,
-        IGitHubApiClient githubClient,
         INotificationService notificationService,
         IConfigurationProviderService configurationProvider,
         IGameInstallationService installationService,
@@ -258,7 +256,6 @@ public partial class SettingsViewModel : ObservableObject, IDisposable
         _updateManager = updateManager ?? throw new ArgumentNullException(nameof(updateManager));
         _subscriptionStore = subscriptionStore ?? throw new ArgumentNullException(nameof(subscriptionStore));
         _catalogRefreshService = catalogRefreshService ?? throw new ArgumentNullException(nameof(catalogRefreshService));
-        _githubClient = githubClient ?? throw new ArgumentNullException(nameof(githubClient));
         _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
         _configurationProvider = configurationProvider ?? throw new ArgumentNullException(nameof(configurationProvider));
         _installationService = installationService ?? throw new ArgumentNullException(nameof(installationService));

@@ -45,11 +45,7 @@ public class CNCLabsMapResolver(
         ContentSearchResult discoveredItem,
         CancellationToken cancellationToken = default)
     {
-        // [TEMP] DEBUG: ResolveAsync entry point
-        logger.LogInformation(
-            "[TEMP] CNCLabsMapResolver.ResolveAsync called - Item: {Name}, SourceUrl: {Url}",
-            discoveredItem?.Name,
-            discoveredItem?.SourceUrl);
+
 
         if (discoveredItem?.SourceUrl == null)
         {
@@ -184,7 +180,6 @@ public class CNCLabsMapResolver(
         var (gameType, contentType) = CNCLabsHelper.ExtractBreadcrumbCategory(document);
         logger.LogDebug("Detected game type: {GameType}, content type: {ContentType}", gameType, contentType);
 
-        // 5. Download URL
         // 5. Download URL - Try multiple selectors for robustness
         var downloadLink = document.QuerySelector("a[href*='DownloadFile.aspx']")
                            ?? document.QuerySelector("a[href*='downloader.aspx']")

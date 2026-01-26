@@ -110,12 +110,14 @@ public partial class GitHubFilterViewModel : FilterPanelViewModelBase
     private void SelectTopic(FilterOption option)
     {
         SelectedTopic = string.IsNullOrEmpty(option.Value) ? null : option.Value;
+        NotifyFiltersChanged();
     }
 
     [RelayCommand]
     private void SelectAuthor(FilterOption option)
     {
         SelectedAuthor = string.IsNullOrEmpty(option.Value) ? null : option.Value;
+        NotifyFiltersChanged();
     }
 
     private void InitializeTopics()

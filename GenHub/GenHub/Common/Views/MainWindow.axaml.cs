@@ -63,9 +63,9 @@ public partial class MainWindow : Window
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore invalid files
+                    System.Diagnostics.Debug.WriteLine($"Failed to parse dropped file: {ex.Message}");
                 }
             }
         }

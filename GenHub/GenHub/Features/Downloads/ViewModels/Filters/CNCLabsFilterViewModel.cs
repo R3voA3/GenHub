@@ -170,7 +170,7 @@ public partial class CNCLabsFilterViewModel : FilterPanelViewModelBase
         OnPropertyChanged(nameof(IsGeneralsSelected));
 
         // REMOVED: Auto-refresh on game change
-        // NotifyFiltersChanged();
+        NotifyFiltersChanged();
     }
 
     /// <summary>
@@ -197,7 +197,7 @@ public partial class CNCLabsFilterViewModel : FilterPanelViewModelBase
         // Don't toggle IsSelected here - TwoWay binding on IsChecked already handles it
 
         // REMOVED: Auto-refresh on tag toggle
-        // NotifyFiltersChanged();
+        NotifyFiltersChanged();
         OnPropertyChanged(nameof(ActiveTags));
     }
 
@@ -218,6 +218,6 @@ public partial class CNCLabsFilterViewModel : FilterPanelViewModelBase
         SelectedContentType = item.ContentType;
 
         // REMOVED: Auto-refresh on content type change
-        // NotifyFiltersChanged();
+        NotifyFiltersChanged();
     }
 }

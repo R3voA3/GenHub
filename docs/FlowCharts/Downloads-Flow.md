@@ -787,6 +787,6 @@ flowchart TD
 
 ## Related Documentation
 
-- [Content Pipeline](./content-pipeline.md) - Detailed pipeline architecture
+- [Content Pipeline](../features/content/content-pipeline.md) - Detailed pipeline architecture
 - [Discovery Flow](../FlowCharts/Discovery-Flow.md) - Discovery process
 - [Acquisition Flow](../FlowCharts/Acquisition-Flow.md) - Content acquisition

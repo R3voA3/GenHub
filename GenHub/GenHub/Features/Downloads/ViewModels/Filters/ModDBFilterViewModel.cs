@@ -157,24 +157,28 @@ public partial class ModDBFilterViewModel : FilterPanelViewModelBase
     private void SelectCategory(FilterOption option)
     {
         SelectedCategory = SelectedCategory == option.Value ? null : option.Value;
+        NotifyFiltersChanged();
     }
 
     [RelayCommand]
     private void SelectAddonCategory(FilterOption option)
     {
         SelectedAddonCategory = SelectedAddonCategory == option.Value ? null : option.Value;
+        NotifyFiltersChanged();
     }
 
     [RelayCommand]
     private void SelectLicense(FilterOption option)
     {
         SelectedLicense = SelectedLicense == option.Value ? null : option.Value;
+        NotifyFiltersChanged();
     }
 
     [RelayCommand]
     private void SelectTimeframe(FilterOption option)
     {
         SelectedTimeframe = SelectedTimeframe == option.Value ? null : option.Value;
+        NotifyFiltersChanged();
     }
 
     [RelayCommand]

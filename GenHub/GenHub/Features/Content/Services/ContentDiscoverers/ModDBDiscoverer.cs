@@ -25,6 +25,28 @@ public class ModDBDiscoverer(ILogger<ModDBDiscoverer> logger) : IContentDiscover
     private static readonly SemaphoreSlim _browserLock = new(1, 1);
     private static IPlaywright? _playwright;
     private static IBrowser? _browser;
+
+    /// <summary>
+    /// Disposes static Playwright resources. Call on application shutdown.
+    /// </summary>
+    public static async Task DisposePlaywrightAsync()
+    {
+        await _browserLock.WaitAsync();
+        try
+        {
+            if (_browser != null)
+            {
+                await _browser.CloseAsync();
+                _browser = null;
+            }
+            _playwright?.Dispose();
+            _playwright = null;
+        }
+        finally
+        {
+            _browserLock.Release();
+        }
+    }
     private readonly ILogger<ModDBDiscoverer> _logger = logger;
 
     /// <inheritdoc />
@@ -87,6 +109,7 @@ public class ModDBDiscoverer(ILogger<ModDBDiscoverer> logger) : IContentDiscover
 
     private static async Task EnsurePlaywrightInitializedAsync()
     {
+        // Double-check locking pattern to prevent race conditions
         if (_browser != null) return;
 
         await _browserLock.WaitAsync();

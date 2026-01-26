@@ -160,7 +160,7 @@
                     <Border Background="#1A1A1A"
                             CornerRadius="8"
                             Padding="24"
-                            IsVisible="{Binding CompatibleProfiles.Count, Converter={x:Static ObjectConverters.IsNull}}">
+                            IsVisible="{Binding !CompatibleProfiles.Count}">
                         <StackPanel Spacing="8" HorizontalAlignment="Center">
                             <TextBlock Text="No compatible profiles"
                                        FontSize="14"

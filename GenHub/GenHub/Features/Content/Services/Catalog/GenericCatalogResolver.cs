@@ -81,6 +81,11 @@ public class GenericCatalogResolver(
                     screenshotUrls: contentItem.Metadata?.ScreenshotUrls?.ToList());
 
             // Add primary artifact for download
+            if (release.Artifacts == null || release.Artifacts.Count == 0)
+            {
+                return OperationResult<ContentManifest>.CreateFailure("No artifacts found in release");
+            }
+
             var primaryArtifact = release.Artifacts.FirstOrDefault(a => a.IsPrimary) ?? release.Artifacts.First();
 
             // ContentManifestBuilder.AddDownloadedFileAsync will:

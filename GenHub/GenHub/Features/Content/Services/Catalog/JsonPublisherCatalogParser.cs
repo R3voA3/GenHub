@@ -166,7 +166,8 @@ public class JsonPublisherCatalogParser(ILogger<JsonPublisherCatalogParser> logg
             return true;
         }
 
-        _logger.LogWarning("Signature verification not yet implemented");
-        return true;
+        // Fail-secure: reject signed catalogs until verification is implemented
+        _logger.LogError("Signature verification not yet implemented - rejecting signed catalog");
+        return false;
     }
 }

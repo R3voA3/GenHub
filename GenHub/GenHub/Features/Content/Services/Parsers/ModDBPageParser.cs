@@ -699,11 +699,11 @@ public class ModDBPageParser(IPlaywrightService playwrightService, ILogger<ModDB
     }
 
     /// <inheritdoc />
-    public Task<ParsedWebPage> ParseAsync(string url, string html, CancellationToken cancellationToken = default)
+    public async Task<ParsedWebPage> ParseAsync(string url, string html, CancellationToken cancellationToken = default)
     {
         var browsingContext = BrowsingContext.New(Configuration.Default);
-        var document = browsingContext.OpenAsync(req => req.Content(html), cancellationToken).GetAwaiter().GetResult();
-        return Task.FromResult(ParseInternal(url, document));
+        var document = await browsingContext.OpenAsync(req => req.Content(html), cancellationToken);
+        return ParseInternal(url, document);
     }
 
     /// <summary>

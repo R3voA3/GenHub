@@ -110,7 +110,18 @@ public partial class DownloadsViewModel(
         if (!_isPublisherContentPopulated)
         {
             _isPublisherContentPopulated = true;
-            _ = PopulatePublisherCardsAsync();
+            // Fire and forget with error handling
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await PopulatePublisherCardsAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to populate publisher cards");
+                }
+            });
         }
 
         try

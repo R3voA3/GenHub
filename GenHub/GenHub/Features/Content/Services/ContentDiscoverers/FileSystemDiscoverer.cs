@@ -97,7 +97,8 @@ public class FileSystemDiscoverer : IContentDiscoverer
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to discover manifests from content directories");
-            return OperationResult<ContentDiscoveryResult>.CreateFailure($"Failed to discover manifests {ex.Message}");
+            return OperationResult<ContentDiscoveryResult>.CreateFailure(
+                "Failed to discover manifests from content directories.");
         }
 
         foreach (var manifestEntry in discoveredManifests)

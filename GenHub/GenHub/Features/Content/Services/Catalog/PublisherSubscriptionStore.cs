@@ -41,23 +41,29 @@ public class PublisherSubscriptionStore : IPublisherSubscriptionStore
         _configurationProvider = configurationProvider;
 
         var appDataPath = _configurationProvider.GetApplicationDataPath();
-        _subscriptionsFilePath = Path.Combine(appDataPath, "subscriptions.json");
+        _subscriptionsFilePath = Path.Combine(appDataPath, FileTypes.SubscriptionsFileName);
     }
 
     /// <inheritdoc />
     public async Task<OperationResult<IEnumerable<PublisherSubscription>>> GetSubscriptionsAsync(
         CancellationToken cancellationToken = default)
     {
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
             var collection = await LoadSubscriptionsAsync(cancellationToken);
-            return OperationResult<IEnumerable<PublisherSubscription>>.CreateSuccess(collection.Subscriptions);
+            // Return a copy to safely allow enumeration outside the lock
+            return OperationResult<IEnumerable<PublisherSubscription>>.CreateSuccess(collection.Subscriptions.ToList());
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get subscriptions");
             return OperationResult<IEnumerable<PublisherSubscription>>.CreateFailure(
                 $"Failed to load subscriptions: {ex.Message}");
+        }
+        finally
+        {
+            _fileLock.Release();
         }
     }
 
@@ -66,6 +72,7 @@ public class PublisherSubscriptionStore : IPublisherSubscriptionStore
         string publisherId,
         CancellationToken cancellationToken = default)
     {
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
             var collection = await LoadSubscriptionsAsync(cancellationToken);
@@ -79,6 +86,10 @@ public class PublisherSubscriptionStore : IPublisherSubscriptionStore
             _logger.LogError(ex, "Failed to get subscription for {PublisherId}", publisherId);
             return OperationResult<PublisherSubscription?>.CreateFailure(
                 $"Failed to load subscription: {ex.Message}");
+        }
+        finally
+        {
+            _fileLock.Release();
         }
     }
 
@@ -187,6 +198,7 @@ public class PublisherSubscriptionStore : IPublisherSubscriptionStore
         string publisherId,
         CancellationToken cancellationToken = default)
     {
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
             var collection = await LoadSubscriptionsAsync(cancellationToken);
@@ -199,6 +211,10 @@ public class PublisherSubscriptionStore : IPublisherSubscriptionStore
         {
             _logger.LogError(ex, "Failed to check subscription for {PublisherId}", publisherId);
             return OperationResult<bool>.CreateFailure($"Failed to check subscription: {ex.Message}");
+        }
+        finally
+        {
+            _fileLock.Release();
         }
     }
 

@@ -218,7 +218,7 @@ public class GeneralsOnlineJsonCatalogParser(ILogger<GeneralsOnlineJsonCatalogPa
             TargetGame = provider.TargetGame ?? GameType.ZeroHour,
             ProviderName = provider.PublisherType,
             AuthorName = GeneralsOnlineConstants.PublisherName,
-            IconUrl = GeneralsOnlineConstants.LogoSource,
+            IconUrl = provider.Endpoints.GetEndpoint("iconUrl") ?? GeneralsOnlineConstants.LogoSource,
             LastUpdated = release.ReleaseDate,
             DownloadSize = release.PortableSize ?? 0,
             RequiresResolution = true,

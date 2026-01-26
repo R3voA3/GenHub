@@ -45,7 +45,7 @@ public class ContentDependency
 | Behavior | Description | User Experience |
 |----------|-------------|-----------------|
 | `RequireExisting` | User must already have this installed | Error if missing |
-| `AutoInstall` | GenHub downloads automatically | Seamless install |
+| `AutoInstall` | GenHub downloads automatically (if available) | Seamless install |
 | `OptionalEnhancement` | Nice-to-have, not required | Suggested prompt |
 | `ConflictsWithOther` | Cannot coexist with specified content | Conflict warning |
 

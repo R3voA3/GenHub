@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Models.Parsers;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace GenHub.Features.Content.Services;
@@ -10,26 +11,17 @@ namespace GenHub.Features.Content.Services;
 /// <summary>
 /// Default implementation of <see cref="IContentCacheService"/> using an in-memory cache.
 /// </summary>
-public sealed class ContentCacheService(ILogger<ContentCacheService> logger) : IContentCacheService
+public sealed class ContentCacheService(ILogger<ContentCacheService> logger, IMemoryCache cache) : IContentCacheService
 {
-    private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private readonly TimeSpan _defaultTtl = TimeSpan.FromHours(1);
-
-    private record CacheEntry(ParsedWebPage Data, DateTime ExpiresAt);
 
     /// <inheritdoc/>
     public Task<ParsedWebPage?> GetAsync(string cacheKey, CancellationToken ct = default)
     {
-        if (_cache.TryGetValue(cacheKey, out var entry))
+        if (cache.TryGetValue(cacheKey, out ParsedWebPage? data))
         {
-            if (DateTime.UtcNow < entry.ExpiresAt)
-            {
-                logger.LogDebug("Cache hit for {CacheKey}", cacheKey);
-                return Task.FromResult<ParsedWebPage?>(entry.Data);
-            }
-
-            // Expired, remove it
-            _cache.TryRemove(cacheKey, out _);
+            logger.LogDebug("Cache hit for {CacheKey}", cacheKey);
+            return Task.FromResult(data);
         }
 
         logger.LogDebug("Cache miss for {CacheKey}", cacheKey);
@@ -40,7 +32,11 @@ public sealed class ContentCacheService(ILogger<ContentCacheService> logger) : I
     public Task SetAsync(string cacheKey, ParsedWebPage data, TimeSpan? ttl = null, CancellationToken ct = default)
     {
         var expiresAt = DateTime.UtcNow + (ttl ?? _defaultTtl);
-        _cache[cacheKey] = new CacheEntry(data, expiresAt);
+
+        using var entry = cache.CreateEntry(cacheKey);
+        entry.Value = data;
+        entry.AbsoluteExpiration = expiresAt;
+
         logger.LogDebug("Cached {CacheKey} until {ExpiresAt}", cacheKey, expiresAt);
         return Task.CompletedTask;
     }
@@ -48,22 +44,34 @@ public sealed class ContentCacheService(ILogger<ContentCacheService> logger) : I
     /// <inheritdoc/>
     public bool HasValidCache(string cacheKey)
     {
-        return _cache.TryGetValue(cacheKey, out var entry) && DateTime.UtcNow < entry.ExpiresAt;
+        // IMemoryCache doesn't expose a way to check without retrieving,
+        // but TryGetValue works for this purpose and handles expiration.
+        return cache.TryGetValue(cacheKey, out _);
     }
 
     /// <inheritdoc/>
     public void Invalidate(string cacheKey)
     {
-        _cache.TryRemove(cacheKey, out _);
+        cache.Remove(cacheKey);
         logger.LogDebug("Invalidated cache for {CacheKey}", cacheKey);
     }
 
     /// <summary>
     /// Clears all cached data.
+    /// Note: IMemoryCache does not support clearing all entries.
+    /// This implementation is a no-op as MemoryCache handles eviction automatically.
     /// </summary>
     public void ClearAll()
     {
-        _cache.Clear();
-        logger.LogInformation("Cleared all content cache");
+        // Compact 100% to force eviction of everything that can be evicted
+        if (cache is MemoryCache memoryCache)
+        {
+            memoryCache.Compact(1.0);
+            logger.LogInformation("Compacted content cache");
+        }
+        else
+        {
+            logger.LogWarning("ClearAll called but cache is not strictly MemoryCache, skipping compaction");
+        }
     }
 }

@@ -74,8 +74,8 @@
                     </StackPanel>
 
                     <!-- Details State -->
-                    <ScrollViewer IsVisible="{Binding !IsLoading}">
-                        <StackPanel Spacing="15" Margin="10">
+                    <ScrollViewer IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                        <StackPanel Spacing="15" Margin="10" IsVisible="{Binding !IsLoading}">
                             <!-- Avatar/Logo -->
                             <Border Width="120" Height="120"
                                     CornerRadius="60"

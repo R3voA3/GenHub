@@ -797,7 +797,11 @@ public partial class ContentDetailViewModel : ObservableObject
         {
             _logger.LogInformation("Downloading individual file: {FileName} from {Url}", file.Name, file.DownloadUrl);
 
+            _logger.LogInformation("Downloading individual file: {FileName} from {Url}", file.Name, file.DownloadUrl);
+
             // TODO: Implement individual file download
+            _notificationService.ShowWarning("Not Implemented", "Individual file downloading is coming soon. Please download the full content package.");
+            return;
             // This would use IDownloadService to download the specific file
             // For now, we'll just trigger the main download
             await DownloadAsync(cancellationToken);

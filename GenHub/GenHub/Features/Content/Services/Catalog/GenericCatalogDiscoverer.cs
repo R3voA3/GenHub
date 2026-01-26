@@ -163,14 +163,29 @@ public class GenericCatalogDiscoverer(
             var response = await httpClient.GetAsync(_subscription.CatalogUrl, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            // Check size limit
-            if (response.Content.Headers.ContentLength > CatalogConstants.MaxCatalogSizeBytes)
+            // Check size limit from header if available
+            if (response.Content.Headers.ContentLength.HasValue &&
+                response.Content.Headers.ContentLength.Value > CatalogConstants.MaxCatalogSizeBytes)
             {
                 return OperationResult<PublisherCatalog>.CreateFailure(
                     $"Catalog exceeds maximum size of {CatalogConstants.MaxCatalogSizeBytes} bytes");
             }
 
-            var catalogJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            // Read with size limit
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new System.IO.StreamReader(stream);
+
+            // Read into buffer to enforce limit if header was missing
+            var buffer = new char[CatalogConstants.MaxCatalogSizeBytes + 1]; // +1 to detect overflow
+            var charsRead = await reader.ReadAsync(buffer, 0, buffer.Length);
+
+            if (charsRead > CatalogConstants.MaxCatalogSizeBytes)
+            {
+                return OperationResult<PublisherCatalog>.CreateFailure(
+                    $"Catalog exceeds maximum size of {CatalogConstants.MaxCatalogSizeBytes} bytes");
+            }
+
+            var catalogJson = new string(buffer, 0, charsRead);
 
             // Parse catalog
             return await _catalogParser.ParseCatalogAsync(catalogJson, cancellationToken);

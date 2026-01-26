@@ -64,6 +64,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
             finally
             {
                 await page.CloseAsync();
+                await page.Context.CloseAsync();
             }
         }
         catch (Exception ex)
@@ -96,7 +97,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
             _playwright = null;
         }
 
-        _browserLock.Dispose();
+
         GC.SuppressFinalize(this);
     }
 
@@ -207,6 +208,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
                 // Unsubscribe and close
                 page.Download -= DownloadHandler;
                 await page.CloseAsync();
+                await page.Context.CloseAsync();
             }
         }
         catch (Exception ex)

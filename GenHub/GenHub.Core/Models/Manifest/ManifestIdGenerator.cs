@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Globalization;
 using GenHub.Core.Constants;
 using GenHub.Core.Extensions;
 using GenHub.Core.Extensions.GameInstallations;
@@ -82,7 +83,7 @@ public static partial class ManifestIdGenerator
         var safePublisher = Normalize(publisherId);
         var contentTypeString = contentType.ToManifestIdString();
         var safeName = Normalize(contentName);
-        var dateVersion = releaseDate.ToString("yyyyMMdd");
+        var dateVersion = releaseDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var fullVersion = $"{ManifestConstants.DefaultManifestFormatVersion}.{dateVersion}";
 
         return $"{fullVersion}.{safePublisher}.{contentTypeString}.{safeName}";

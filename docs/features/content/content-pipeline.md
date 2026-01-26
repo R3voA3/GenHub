@@ -278,7 +278,7 @@ await manifest.AddDownloadedFileAsync(
 
 IDs follow a deterministic format:
 
-```
+```text
 {version}.{userVersion}.{publisherId}.{contentType}.{contentName}
 ```
 

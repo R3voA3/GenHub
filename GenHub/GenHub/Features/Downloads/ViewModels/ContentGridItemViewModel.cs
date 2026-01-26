@@ -223,7 +223,10 @@ public partial class ContentGridItemViewModel : ObservableObject
     /// <summary>
     /// Gets a value indicating whether the Add to Profile button should be shown.
     /// </summary>
-    public bool ShowAddToProfileButton => CurrentState == ContentState.Downloaded;
+    /// <summary>
+    /// Gets a value indicating whether the Add to Profile button should be shown.
+    /// </summary>
+    public bool ShowAddToProfileButton => CurrentState == ContentState.Downloaded || CurrentState == ContentState.UpdateAvailable;
 
     /// <summary>
     /// Gets the tags associated with this content.
