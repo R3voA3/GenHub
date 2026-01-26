@@ -36,7 +36,8 @@ export default withMermaid(
                         { text: 'Introduction', link: '/' },
                         { text: 'Developer Onboarding', link: '/onboarding' },
                         { text: 'Architecture Overview', link: '/architecture' },
-                        { text: 'Velopack Integration', link: '/velopack-integration' }
+                        { text: 'Velopack Integration', link: '/velopack-integration' },
+                        { text: 'Contributor Guidelines', link: '/dev/contribution-guidelines' }
                     ]
                 },
                 {
@@ -45,12 +46,14 @@ export default withMermaid(
                         { text: 'Overview', link: '/features/index' },
                         { text: 'App Update & Installer', link: '/velopack-integration' },
                         { text: 'Content System', link: '/features/content' },
-                        { text: 'Manifest Service', link: '/features/manifest' },
+                        { text: 'Downloads Browser', link: '/features/downloads' },
+                        // TODO: Create documentation files - these links are currently broken
+                        // { text: 'Manifest Service', link: '/features/manifest' },
                         { text: 'Storage & CAS', link: '/features/storage' },
-                        { text: 'Validation', link: '/features/validation' },
-                        { text: 'Workspace', link: '/features/workspace' },
-                        { text: 'Launching', link: '/features/launching' },
-                        { text: 'GameProfiles System', link: '/features/gameprofiles' },
+                        // { text: 'Validation', link: '/features/validation' },
+                        // { text: 'Workspace', link: '/features/workspace' },
+                        // { text: 'Launching', link: '/features/launching' },
+                        // { text: 'GameProfiles System', link: '/features/gameprofiles' },
                         { text: 'Game Installations', link: '/features/game-installations' }
                     ]
                 },
@@ -89,6 +92,7 @@ export default withMermaid(
                         { text: 'Content Acquisition', link: '/FlowCharts/Acquisition-Flow' },
                         { text: 'Workspace Assembly', link: '/FlowCharts/Assembly-Flow' },
                         { text: 'Manifest Creation', link: '/FlowCharts/Manifest-Creation-Flow' },
+                        { text: 'Downloads User Flow', link: '/FlowCharts/Downloads-Flow' },
                         { text: 'Complete User Flow', link: '/FlowCharts/Complete-User-Flow' }
                     ]
                 },

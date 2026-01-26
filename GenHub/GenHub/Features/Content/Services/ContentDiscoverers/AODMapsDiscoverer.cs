@@ -32,6 +32,9 @@ public partial class AODMapsDiscoverer(
     [GeneratedRegex(@"(\d+(?:,\d{3})*)\s*downloads?", RegexOptions.IgnoreCase)]
     private static partial Regex DownloadCountRegex();
 
+    [GeneratedRegex(@"(\d+)\.html", RegexOptions.None)]
+    private static partial Regex HtmlPageNumberRegex();
+
     private static string? MakeAbsoluteUrl(string? url)
     {
         if (string.IsNullOrEmpty(url))
@@ -208,12 +211,15 @@ public partial class AODMapsDiscoverer(
 
             cancellationToken.ThrowIfCancellationRequested();
 
+            // Get page number from query (defaults to 1)
+            int page = query.Page ?? 1;
+
             var results = new List<ContentSearchResult>();
 
             // Build the URL based on the query
             var url = BuildDiscoveryUrl(query);
 
-            _logger.LogInformation("Discovering AODMaps content from: {Url}", url);
+            _logger.LogInformation("Discovering AODMaps content from: {Url} (Page {Page})", url, page);
 
             // Fetch HTML
             using var client = _httpClientFactory.CreateClient("AODMaps"); // Should be registered or falls back
@@ -231,13 +237,15 @@ public partial class AODMapsDiscoverer(
             var document = await context.OpenAsync(req => req.Content(html), cancellationToken);
 
             // Extract items
-            var (items, hasMoreItems) = ExtractItems(document, url);
+            var (items, hasMoreItems) = ExtractItems(document, url, page);
             results.AddRange(items);
 
             _logger.LogInformation(
-                "Discovered {Count} AODMaps items from {Url}",
+                "Discovered {Count} AODMaps items from {Url} (Page {Page}, HasMore: {HasMore})",
                 results.Count,
-                url);
+                url,
+                page,
+                hasMoreItems);
 
             return OperationResult<ContentDiscoveryResult>.CreateSuccess(new ContentDiscoveryResult
             {
@@ -314,7 +322,7 @@ public partial class AODMapsDiscoverer(
         return string.Format(AODMapsConstants.NewMapsPagePattern, suffix);
     }
 
-    private (List<ContentSearchResult> Items, bool HasMoreItems) ExtractItems(IDocument document, string sourceUrl)
+    private (List<ContentSearchResult> Items, bool HasMoreItems) ExtractItems(IDocument document, string sourceUrl, int currentPage)
     {
         var results = new List<ContentSearchResult>();
 
@@ -354,22 +362,84 @@ public partial class AODMapsDiscoverer(
         }
 
         // Check for next page indicator to support progressive loading
-        bool hasMoreItems = false;
-
-        // AODMaps uses a ul at the bottom with page numbers and a 'Next' link
-        // AODMaps uses a ul at the bottom with page numbers and a 'Next' link
-        var nextLink = document.QuerySelectorAll("a").FirstOrDefault(a => a.TextContent.Contains("Next", StringComparison.OrdinalIgnoreCase)) ??
-                       document.QuerySelector("a[href*='new']")?.ParentElement?.QuerySelectorAll("a").LastOrDefault(a => a.TextContent.Contains("Next", StringComparison.OrdinalIgnoreCase));
-
-        nextLink ??= document.QuerySelectorAll("a").FirstOrDefault(a => a.TextContent.Contains("Next", StringComparison.OrdinalIgnoreCase));
-
-        hasMoreItems = nextLink != null;
-
-        if (hasMoreItems)
-        {
-            _logger.LogInformation("[AODMaps] Found next link: {Url}", nextLink?.GetAttribute("href"));
-        }
+        bool hasMoreItems = CheckForNextPage(document, currentPage);
 
         return (results, hasMoreItems);
+    }
+
+    private bool CheckForNextPage(IDocument document, int currentPage)
+    {
+        // AODMaps uses pagination links at the bottom of pages
+        // We need to check if there's a link to the next page
+
+        // Method 1: Look for a "Next" link text
+        var nextLink = document.QuerySelectorAll("a").FirstOrDefault(a =>
+            a.TextContent != null &&
+            a.TextContent.Trim().Equals("Next", StringComparison.OrdinalIgnoreCase));
+
+        if (nextLink != null)
+        {
+            _logger.LogInformation("[AODMaps] Found 'Next' link: {Url}", nextLink.GetAttribute("href"));
+            return true;
+        }
+
+        // Method 2: Look for numbered pagination links and check if any are greater than current page
+        // AODMaps typically shows page numbers like: 1 2 3 4 ... Next
+        var allLinks = document.QuerySelectorAll("a").Where(a =>
+        {
+            var href = a.GetAttribute("href");
+            var text = a.TextContent?.Trim();
+
+            // Look for links that might be page numbers (digits or patterns like "new2.html", "new3.html")
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(href))
+                return false;
+
+            // Check if href contains page pattern (new2.html, new3.html, etc.)
+            if (href.Contains("new") || href.Contains("players") || href.Contains("compstomp") || href.Contains("Map_Packs"))
+            {
+                // Extract page number from href patterns
+                // e.g., "new2.html" -> page 2, "6_players2.html" -> page 2
+                var match = HtmlPageNumberRegex().Match(href);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var pageNum))
+                {
+                    return pageNum > currentPage;
+                }
+
+                // Also check the link text for page numbers
+                if (int.TryParse(text, out var textPageNum))
+                {
+                    return textPageNum > currentPage;
+                }
+            }
+
+            return false;
+        }).ToList();
+
+        if (allLinks.Count > 0)
+        {
+            _logger.LogInformation("[AODMaps] Found {Count} pagination links to higher pages", allLinks.Count);
+            return true;
+        }
+
+        // Method 3: Check for any link that points to the next page based on URL patterns
+        // Look for links with "new{N}.html" pattern where N > currentPage
+        var nextPagePattern = currentPage > 1
+            ? $"new{currentPage + 1}.html"
+            : "new2.html";
+
+        var directNextLink = document.QuerySelectorAll("a").FirstOrDefault(a =>
+        {
+            var href = a.GetAttribute("href");
+            return href != null && href.Contains(nextPagePattern);
+        });
+
+        if (directNextLink != null)
+        {
+            _logger.LogInformation("[AODMaps] Found direct next page link: {Url}", directNextLink.GetAttribute("href"));
+            return true;
+        }
+
+        _logger.LogInformation("[AODMaps] No next page link found on page {Page}", currentPage);
+        return false;
     }
 }
