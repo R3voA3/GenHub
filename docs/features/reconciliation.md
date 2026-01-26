@@ -15,6 +15,7 @@ Content reconciliation is the process of synchronizing game profiles when conten
 - **Correct Execution Order**: Profile updates must happen before CAS untracking, which must happen before garbage collection
 - **Event Pipeline**: Real-time notifications for UI updates and user feedback
 - **Audit Trail**: Complete history of all reconciliation operations for debugging and diagnostics
+- **Content Integrity**: Full hash verification ensures even minute changes (like single-byte config edits) are correctly propagated to the workspace
 
 ## Architecture
 

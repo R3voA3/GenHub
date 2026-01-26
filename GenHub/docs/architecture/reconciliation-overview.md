@@ -61,9 +61,9 @@ The physical sync happens at **launch time**:
 
 - `WorkspaceManager.PrepareWorkspaceAsync` compares the profile's requested manifests against the cached manifests in the existing workspace.
 - If they differ, the `WorkspaceReconciler` performs a "Delta Sync":
-  - **Skip**: Files already present and matching.
+  - **Skip**: Files already present and matching by hash (or size if no hash available).
   - **Add**: New files from new manifests.
-  - **Update**: Files with the same relative path but different hashes.
+  - **Update**: Files with the same relative path but different content. Hash verification is performed for **all** files with a known hash to ensure changes are detected even if file size remains identical (e.g., config changes, small binary patches).
   - **Remove**: Files belonging to manifests no longer enabled.
 
 ## Key Orchestration Flows

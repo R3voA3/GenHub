@@ -213,8 +213,9 @@ public class GameProfileManager(
             profile.ToolContentId = request.ToolContentId ?? profile.ToolContentId;
             profile.CommandLineArguments = request.CommandLineArguments ?? profile.CommandLineArguments;
 
-            // Only update ActiveWorkspaceId if explicitly provided (not null or empty)
-            if (!string.IsNullOrEmpty(request.ActiveWorkspaceId))
+            // Only update ActiveWorkspaceId if explicitly provided (not null)
+            // We allow empty strings because that's how we clear the active workspace to force a rebuild
+            if (request.ActiveWorkspaceId != null)
             {
                 profile.ActiveWorkspaceId = request.ActiveWorkspaceId;
             }

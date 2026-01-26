@@ -121,7 +121,7 @@ public sealed class HardLinkStrategy(IFileOperationsService fileOperations, ILog
                     $"Game installation: {configuration.BaseInstallationPath} (drive {sourceRoot})\n" +
                     $"Workspace location: {workspacePath} (drive {destRoot})\n" +
                     $"Please manually change to FullCopy strategy in profile settings or move your workspace to the same drive as your game.";
-                Logger.LogError(errorMessage);
+                Logger.LogError("{ErrorMessage}", errorMessage);
 
                 workspaceInfo.IsPrepared = false;
                 workspaceInfo.ValidationIssues.Add(new()
@@ -372,12 +372,7 @@ public sealed class HardLinkStrategy(IFileOperationsService fileOperations, ILog
     {
         // For game installation files, treat them the same as local files
         // We need to find the manifest that contains this file
-        var manifest = configuration.Manifests.FirstOrDefault(m => m.Files.Contains(file));
-        if (manifest is null)
-        {
-            throw new InvalidOperationException($"Could not find manifest containing file {file.RelativePath}");
-        }
-
+        var manifest = configuration.Manifests.FirstOrDefault(m => m.Files.Contains(file)) ?? throw new InvalidOperationException($"Could not find manifest containing file {file.RelativePath}");
         await ProcessLocalFileAsync(file, manifest, targetPath, configuration, cancellationToken);
     }
 }
