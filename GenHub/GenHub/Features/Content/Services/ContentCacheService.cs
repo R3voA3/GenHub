@@ -49,7 +49,10 @@ public sealed class ContentCacheService(ILogger<ContentCacheService> logger, IMe
         return cache.TryGetValue(cacheKey, out _);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Removes the cached entry for the specified key, if present.
+    /// </summary>
+    /// <param name="cacheKey">The cache key identifying the entry to remove.</param>
     public void Invalidate(string cacheKey)
     {
         cache.Remove(cacheKey);
