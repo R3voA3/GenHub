@@ -124,4 +124,19 @@ public static class GitHubTopicsConstants
     /// Metadata key for primary language.
     /// </summary>
     public const string LanguageMetadataKey = "language";
+
+    /// <summary>
+    /// Metadata key indicating if the content has variants.
+    /// </summary>
+    public const string HasVariantsMetadataKey = "has-variants";
+
+    /// <summary>
+    /// Metadata key for the count of variants.
+    /// </summary>
+    public const string VariantCountMetadataKey = "variant-count";
+
+    /// <summary>
+    /// Data key for storing the list of parsed variants.
+    /// </summary>
+    public const string VariantsJsDataKey = "variants";
 }

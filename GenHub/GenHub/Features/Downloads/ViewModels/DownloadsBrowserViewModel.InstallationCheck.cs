@@ -2,9 +2,9 @@ using System.Threading.Tasks;
 
 namespace GenHub.Features.Downloads.ViewModels;
 
-/// <content>
+/// <summary>
 /// Partial class for DownloadsBrowserViewModel containing installation check logic.
-/// </content>
+/// </summary>
 public partial class DownloadsBrowserViewModel
 {
     /// <summary>

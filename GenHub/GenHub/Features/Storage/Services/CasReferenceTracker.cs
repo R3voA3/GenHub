@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,48 @@ public class CasReferenceTracker(
     ILogger<CasReferenceTracker> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    private static readonly HashSet<string> WindowsReservedNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    };
+
+    private static string SanitizeId(string id)
+    {
+        if (string.IsNullOrEmpty(id))
+            throw new ArgumentException("ID cannot be null or empty", nameof(id));
+
+        var sb = new StringBuilder(id.Length);
+        foreach (var c in id)
+        {
+            if (char.IsLetterOrDigit(c) || c == '.' || c == '-')
+            {
+                sb.Append(c);
+            }
+            else
+            {
+                // Hex encode non-safe characters to avoid collisions (e.g., 'a/b' and 'a_b' no longer collide)
+                // Using underscore as prefix for hex encoded values
+                // Using X4 to ensure injectivity and prevent collisions for BMP characters
+                sb.Append($"_{(int)c:X4}");
+            }
+        }
+
+        var result = sb.ToString();
+
+        // Guard against Windows reserved device names
+        // Windows also reserves names with extensions (e.g., "CON.txt" is treated as "CON")
+        var fileNameWithoutExtension = result.Split('.')[0];
+        if (WindowsReservedNames.Contains(fileNameWithoutExtension))
+        {
+            result = "_" + result;
+        }
+
+        return result.TrimEnd('.');
+    }
+
     private readonly CasConfiguration _config = config.Value;
     private readonly ILogger<CasReferenceTracker> _logger = logger;
     private readonly string _refsDirectory = Path.Combine(config.Value.CasRootPath, "refs");
@@ -43,7 +86,6 @@ public class CasReferenceTracker(
 
         ArgumentNullException.ThrowIfNull(manifest);
 
-        EnsureRefsDirectory();
         await _writeSemaphore.WaitAsync(cancellationToken);
         try
         {
@@ -52,7 +94,7 @@ public class CasReferenceTracker(
                 EnsureRefsDirectory();
 
                 // Sanitize manifestId to prevent path traversal
-                var safeManifestId = Path.GetFileName(manifestId);
+                var safeManifestId = SanitizeId(manifestId);
                 var manifestRefsPath = Path.Combine(_refsDirectory, "manifests", $"{safeManifestId}.refs");
                 var directoryPath = Path.GetDirectoryName(manifestRefsPath);
                 if (directoryPath != null)
@@ -79,14 +121,17 @@ public class CasReferenceTracker(
             catch (IOException ioEx)
             {
                 _logger.LogError(ioEx, "IO error while tracking manifest references for {ManifestId}", manifestId);
+                throw;
             }
             catch (UnauthorizedAccessException uaEx)
             {
                 _logger.LogError(uaEx, "Access denied while tracking manifest references for {ManifestId}", manifestId);
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to track manifest references for {ManifestId}", manifestId);
+                throw;
             }
         }
         finally
@@ -109,40 +154,51 @@ public class CasReferenceTracker(
 
         ArgumentNullException.ThrowIfNull(referencedHashes);
 
+        await _writeSemaphore.WaitAsync(cancellationToken);
         try
         {
-            EnsureRefsDirectory();
-
-            // Sanitize workspaceId to prevent path traversal
-            var safeWorkspaceId = Path.GetFileName(workspaceId);
-            var workspaceRefsPath = Path.Combine(_refsDirectory, "workspaces", $"{safeWorkspaceId}.refs");
-            var directoryPath = Path.GetDirectoryName(workspaceRefsPath);
-            if (directoryPath != null)
-                Directory.CreateDirectory(directoryPath);
-
-            var refData = new
+            try
             {
-                WorkspaceId = workspaceId,
-                References = referencedHashes.ToHashSet(),
-                TrackedAt = DateTime.UtcNow,
-            };
+                EnsureRefsDirectory();
 
-            var json = JsonSerializer.Serialize(refData, JsonOptions);
-            await File.WriteAllTextAsync(workspaceRefsPath, json, cancellationToken);
+                // Sanitize workspaceId to prevent path traversal
+                var safeWorkspaceId = SanitizeId(workspaceId);
+                var workspaceRefsPath = Path.Combine(_refsDirectory, "workspaces", $"{safeWorkspaceId}.refs");
+                var directoryPath = Path.GetDirectoryName(workspaceRefsPath);
+                if (directoryPath != null)
+                    Directory.CreateDirectory(directoryPath);
 
-            _logger.LogDebug("Tracked {ReferenceCount} CAS references for workspace {WorkspaceId}", refData.References.Count, workspaceId);
+                var refData = new
+                {
+                    WorkspaceId = workspaceId,
+                    References = referencedHashes.ToHashSet(),
+                    TrackedAt = DateTime.UtcNow,
+                };
+
+                var json = JsonSerializer.Serialize(refData, JsonOptions);
+                await File.WriteAllTextAsync(workspaceRefsPath, json, cancellationToken);
+
+                _logger.LogDebug("Tracked {ReferenceCount} CAS references for workspace {WorkspaceId}", refData.References.Count, workspaceId);
+            }
+            catch (IOException ioEx)
+            {
+                _logger.LogError(ioEx, "IO error while tracking workspace references for {WorkspaceId}", workspaceId);
+                throw;
+            }
+            catch (UnauthorizedAccessException uaEx)
+            {
+                _logger.LogError(uaEx, "Access denied while tracking workspace references for {WorkspaceId}", workspaceId);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to track workspace references for {WorkspaceId}", workspaceId);
+                throw;
+            }
         }
-        catch (IOException ioEx)
+        finally
         {
-            _logger.LogError(ioEx, "IO error while tracking workspace references for {WorkspaceId}", workspaceId);
-        }
-        catch (UnauthorizedAccessException uaEx)
-        {
-            _logger.LogError(uaEx, "Access denied while tracking workspace references for {WorkspaceId}", workspaceId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to track workspace references for {WorkspaceId}", workspaceId);
+            _writeSemaphore.Release();
         }
     }
 
@@ -154,19 +210,30 @@ public class CasReferenceTracker(
     /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task UntrackManifestAsync(string manifestId, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(manifestId))
+            throw new ArgumentException("Manifest ID cannot be null or empty", nameof(manifestId));
+
+        await _writeSemaphore.WaitAsync(cancellationToken);
         try
         {
-            var manifestRefsPath = Path.Combine(_refsDirectory, "manifests", $"{manifestId}.refs");
+            // Sanitize manifestId to prevent path traversal
+            var safeManifestId = SanitizeId(manifestId);
+            var manifestRefsPath = Path.Combine(_refsDirectory, "manifests", $"{safeManifestId}.refs");
 
             if (File.Exists(manifestRefsPath))
             {
-                await Task.Run(() => File.Delete(manifestRefsPath), cancellationToken);
+                File.Delete(manifestRefsPath);
                 _logger.LogDebug("Removed CAS reference tracking for manifest {ManifestId}", manifestId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to remove reference tracking for manifest {ManifestId}", manifestId);
+            _logger.LogError(ex, "Failed to remove reference tracking for manifest {ManifestId}", manifestId);
+            throw;
+        }
+        finally
+        {
+            _writeSemaphore.Release();
         }
     }
 
@@ -178,19 +245,30 @@ public class CasReferenceTracker(
     /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task UntrackWorkspaceAsync(string workspaceId, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(workspaceId))
+            throw new ArgumentException("Workspace ID cannot be null or empty", nameof(workspaceId));
+
+        await _writeSemaphore.WaitAsync(cancellationToken);
         try
         {
-            var workspaceRefsPath = Path.Combine(_refsDirectory, "workspaces", $"{workspaceId}.refs");
+            // Sanitize workspaceId to prevent path traversal
+            var safeWorkspaceId = SanitizeId(workspaceId);
+            var workspaceRefsPath = Path.Combine(_refsDirectory, "workspaces", $"{safeWorkspaceId}.refs");
 
             if (File.Exists(workspaceRefsPath))
             {
-                await Task.Run(() => File.Delete(workspaceRefsPath), cancellationToken);
+                File.Delete(workspaceRefsPath);
                 _logger.LogDebug("Removed CAS reference tracking for workspace {WorkspaceId}", workspaceId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to remove reference tracking for workspace {WorkspaceId}", workspaceId);
+            _logger.LogError(ex, "Failed to remove reference tracking for workspace {WorkspaceId}", workspaceId);
+            throw;
+        }
+        finally
+        {
+            _writeSemaphore.Release();
         }
     }
 
@@ -206,7 +284,6 @@ public class CasReferenceTracker(
         try
         {
             var subdirectories = new[] { "manifests", "workspaces" };
-            var tasks = new List<Task<HashSet<string>>>();
 
             foreach (var subdirectory in subdirectories)
             {
@@ -215,31 +292,21 @@ public class CasReferenceTracker(
                 {
                     var refFiles = Directory.GetFiles(refsDir, "*.refs");
 
-                    // Limit parallelism to avoid overwhelming the system
-                    var batchSize = Math.Min(10, refFiles.Length);
-                    var semaphore = new SemaphoreSlim(batchSize);
-
-                    var fileTasks = refFiles.Select(async refFile =>
-                    {
-                        await semaphore.WaitAsync(cancellationToken);
-                        try
+                    await Parallel.ForEachAsync(refFiles,
+                        new ParallelOptions
                         {
-                            return await ReadReferencesFromFileAsync(refFile, cancellationToken);
-                        }
-                        finally
+                            MaxDegreeOfParallelism = 20,
+                            CancellationToken = cancellationToken
+                        },
+                        async (refFile, ct) =>
                         {
-                            semaphore.Release();
-                        }
-                    });
-
-                    tasks.AddRange(fileTasks);
+                            var refs = await ReadReferencesFromFileAsync(refFile, ct);
+                            lock (allReferences)
+                            {
+                                allReferences.UnionWith(refs);
+                            }
+                        });
                 }
-            }
-
-            var results = await Task.WhenAll(tasks);
-            foreach (var references in results)
-            {
-                allReferences.UnionWith(references);
             }
 
             _logger.LogDebug("Collected {ReferenceCount} total CAS references", allReferences.Count);

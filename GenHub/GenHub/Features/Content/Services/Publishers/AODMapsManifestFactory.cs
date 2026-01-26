@@ -77,7 +77,10 @@ public partial class AODMapsManifestFactory(
 
         // 3. Format release date
         var releaseDate = details.SubmissionDate.ToString("yyyyMMdd");
-        if (releaseDate == "00010101") releaseDate = DateTime.Now.ToString("yyyyMMdd");
+        if (releaseDate == "00010101" || releaseDate == "19700101")
+        {
+            releaseDate = DateTime.UtcNow.ToString("yyyyMMdd");
+        }
 
         // 4. Generate manifest ID
         // User requested Version 0 for downloaded content

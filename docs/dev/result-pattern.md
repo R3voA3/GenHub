@@ -3,7 +3,7 @@ title: Result Pattern
 description: Documentation for the Result pattern used in GenHub
 ---
 
-# Result Pattern Documentation
+## Result Pattern Documentation
 
 GenHub uses a consistent Result pattern for handling operations that may succeed or fail. This pattern provides a standardized way to return data and error information from methods.
 
@@ -19,7 +19,7 @@ The Result pattern in GenHub consists of several key components:
 
 `ResultBase` is the foundation of the result pattern. It provides common properties for success/failure status, errors, and timing information.
 
-### Properties
+### ResultBase Properties
 
 - `Success`: Indicates if the operation was successful
 - `Failed`: Indicates if the operation failed (opposite of Success)
@@ -44,7 +44,7 @@ protected ResultBase(bool success, string? error = null, TimeSpan elapsed = defa
 
 `OperationResult&lt;T&gt;` extends `ResultBase` and adds support for returning data from operations.
 
-### Properties
+### OperationResult Properties
 
 - `Data`: The data returned by the operation (nullable)
 - `FirstError`: The first error message, or null if no errors
@@ -74,6 +74,7 @@ GenHub includes several specialized result types for different domains:
 Result of a game launch operation.
 
 **Properties:**
+
 - `ProcessId`: The launched process ID
 - `Exception`: Exception that occurred during launch
 - `StartTime`: When the launch started
@@ -81,6 +82,7 @@ Result of a game launch operation.
 - `FirstError`: First error message
 
 **Factory Methods:**
+
 ```csharp
 LaunchResult CreateSuccess(int processId, DateTime startTime, TimeSpan launchDuration)
 LaunchResult CreateFailure(string errorMessage, Exception? exception = null)
@@ -91,6 +93,7 @@ LaunchResult CreateFailure(string errorMessage, Exception? exception = null)
 Result of a validation operation.
 
 **Properties:**
+
 - `ValidatedTargetId`: ID of the validated target
 - `Issues`: List of validation issues
 - `IsValid`: Whether validation passed
@@ -103,6 +106,7 @@ Result of a validation operation.
 Result of an update check operation.
 
 **Properties:**
+
 - `IsUpdateAvailable`: Whether an update is available
 - `CurrentVersion`: Current application version
 - `LatestVersion`: Latest available version
@@ -114,6 +118,7 @@ Result of an update check operation.
 - `HasErrors`: Whether there are errors
 
 **Factory Methods:**
+
 ```csharp
 UpdateCheckResult NoUpdateAvailable()
 UpdateCheckResult UpdateAvailable(GitHubRelease release)
@@ -125,9 +130,11 @@ UpdateCheckResult Error(string errorMessage)
 Generic result for detection operations.
 
 **Properties:**
+
 - `Items`: Detected items
 
 **Factory Methods:**
+
 ```csharp
 DetectionResult<T> Succeeded(IEnumerable<T> items, TimeSpan elapsed)
 DetectionResult<T> Failed(string error)
@@ -138,6 +145,7 @@ DetectionResult<T> Failed(string error)
 Result of a file download operation.
 
 **Properties:**
+
 - `FilePath`: Path to the downloaded file
 - `BytesDownloaded`: Number of bytes downloaded
 - `HashVerified`: Whether hash verification passed
@@ -147,6 +155,7 @@ Result of a file download operation.
 - `FirstError`: First error message
 
 **Factory Methods:**
+
 ```csharp
 DownloadResult CreateSuccess(string filePath, long bytesDownloaded, TimeSpan elapsed, bool hashVerified = false)
 ```
@@ -156,11 +165,13 @@ DownloadResult CreateSuccess(string filePath, long bytesDownloaded, TimeSpan ela
 Result of parsing GitHub repository URLs.
 
 **Properties:**
+
 - `Owner`: Repository owner
 - `Repo`: Repository name
 - `Tag`: Release tag
 
 **Factory Methods:**
+
 ```csharp
 GitHubUrlParseResult CreateSuccess(string owner, string repo, string? tag)
 GitHubUrlParseResult CreateFailure(params string[] errors)
@@ -173,6 +184,7 @@ GitHubUrlParseResult CreateFailure(params string[] errors)
 Result of CAS garbage collection.
 
 **Properties:**
+
 - `ObjectsDeleted`: Number of objects deleted
 - `BytesFreed`: Bytes freed
 - `ObjectsScanned`: Objects scanned
@@ -184,6 +196,7 @@ Result of CAS garbage collection.
 Result of CAS integrity validation.
 
 **Properties:**
+
 - `Issues`: Validation issues
 - `IsValid`: Whether validation passed
 - `ObjectsValidated`: Objects validated
@@ -194,6 +207,7 @@ Result of CAS integrity validation.
 Summary of CAS system state.
 
 **Properties:**
+
 - `TotalObjects`: Number of objects in CAS
 - `TotalBytes`: Total disk space consumed
 - `LastGcTimestamp`: When garbage collection was last run

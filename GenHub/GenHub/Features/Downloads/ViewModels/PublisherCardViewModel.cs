@@ -65,6 +65,9 @@ public partial class PublisherCardViewModel : ObservableObject, IRecipient<Profi
     private long? _downloadSize;
 
     [ObservableProperty]
+    private int _referenceCount;
+
+    [ObservableProperty]
     private bool _isExpanded;
 
     [ObservableProperty]
@@ -734,8 +737,8 @@ public partial class PublisherCardViewModel : ObservableObject, IRecipient<Profi
     {
         var latestItem = ContentTypes
             .SelectMany(g => g.Items)
-            .Where(i => !i.IsInstalled)
-            .OrderByDescending(i => i.Model.LastUpdated)
+            .Where(i => i.Model != null && !i.IsInstalled)
+            .OrderByDescending(i => i.Model.LastUpdated ?? DateTime.MinValue)
             .FirstOrDefault();
 
         if (latestItem == null)

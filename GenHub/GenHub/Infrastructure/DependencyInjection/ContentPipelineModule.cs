@@ -39,12 +39,9 @@ namespace GenHub.Infrastructure.DependencyInjection;
 public static class ContentPipelineModule
 {
     /// <summary>
-    /// Registers content pipeline services for dependency injection.
-    /// </summary>
-    /// <param name="services">The service collection to configure.</param>
-    /// <summary>
     /// Registers core and all content pipeline services into the provided service collection.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     /// <returns>The updated service collection.</returns>
     public static IServiceCollection AddContentPipelineServices(this IServiceCollection services)
     {
@@ -65,15 +62,14 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers core services required by all pipelines.
-    /// <summary>
     /// Registers core shared services and infrastructure required by all content pipelines.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     /// <remarks>
     /// Registers foundational services such as the content orchestrator, hash providers, memory and dynamic caches,
     /// HTTP client factories (including a named client for Generals Online), content storage and manifest pool,
     /// provider/ catalog parsers and factories, content caching, GitHub API client, local content service,
-    /// publisher subscription and catalog services, the generic catalog pipeline types, and a subscription confirmation view model registration.
+    /// publisher subscription and catalog services, and the generic catalog pipeline types.
     /// </remarks>
     private static void AddCoreServices(IServiceCollection services)
     {
@@ -94,7 +90,7 @@ public static class ContentPipelineModule
         // Register named HTTP client for Generals Online
         services.AddHttpClient(GeneralsOnlineConstants.PublisherType, static httpClient =>
         {
-            httpClient.Timeout = TimeSpan.FromSeconds(30);
+            httpClient.Timeout = TimeoutConstants.DefaultHttpRequest;
         });
 
         // Register core storage and manifest services
@@ -110,7 +106,7 @@ public static class ContentPipelineModule
 
             return new ContentStorageService(storageRoot, logger, casService, referenceTracker);
         });
-        services.AddScoped<IContentManifestPool, ContentManifestPool>();
+        services.AddSingleton<IContentManifestPool, ContentManifestPool>();
 
         // Register provider definition loader for data-driven provider configuration
         services.AddSingleton<IProviderDefinitionLoader, ProviderDefinitionLoader>();
@@ -148,6 +144,7 @@ public static class ContentPipelineModule
 
         // Register generic catalog pipeline (transient for per-subscription instances)
         services.AddTransient<GenHub.Features.Content.Services.Catalog.GenericCatalogDiscoverer>();
+        services.AddTransient<IContentDiscoverer>(sp => sp.GetRequiredService<GenHub.Features.Content.Services.Catalog.GenericCatalogDiscoverer>());
         services.AddTransient<GenHub.Features.Content.Services.Catalog.GenericCatalogResolver>();
         services.AddTransient<IContentResolver>(sp => sp.GetRequiredService<GenHub.Features.Content.Services.Catalog.GenericCatalogResolver>());
 
@@ -157,10 +154,9 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers GitHub content pipeline services.
-    /// <summary>
     /// Registers GitHub-specific services required by the content pipeline, including providers, discoverers, resolver, deliverer, publisher manifest factories, and the SuperHackers update service.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     private static void AddGitHubPipeline(IServiceCollection services)
     {
         // Register GitHub content provider
@@ -200,10 +196,9 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers Generals Online content pipeline services.
-    /// <summary>
     /// Registers all dependency-injection services required by the Generals Online content pipeline.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     private static void AddGeneralsOnlinePipeline(IServiceCollection services)
     {
         // Register Generals Online provider
@@ -234,10 +229,9 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers Community Outpost content pipeline services.
-    /// <summary>
     /// Registers Community Outpost content-pipeline services into the provided service collection.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     /// <remarks>
     /// Adds concrete implementations and their interface mappings for the Community Outpost provider, discoverer, resolver, deliverer, manifest factory, and update service.
     /// </remarks>
@@ -268,10 +262,9 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers CNCLabs content pipeline services.
-    /// <summary>
     /// Registers CNCLabs content pipeline components (content provider, map discoverer, map resolver, and publisher manifest factory) as singletons in the DI container.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     private static void AddCNCLabsPipeline(IServiceCollection services)
     {
         // Register CNCLabs content provider
@@ -292,8 +285,6 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers ModDB content pipeline services.
-    /// <summary>
     /// Registers ModDB-specific content-pipeline services and configures the named HttpClient used to access ModDB.
     /// </summary>
     /// <param name="services">The IServiceCollection to which ModDB pipeline services (HttpClient, Playwright page parser, discoverer, resolver, manifest factory, and content provider) will be added.</param>
@@ -303,10 +294,10 @@ public static class ContentPipelineModule
         services.AddHttpClient(ModDBConstants.PublisherPrefix, httpClient =>
         {
             httpClient.BaseAddress = new Uri(ModDBConstants.BaseUrl);
-            httpClient.Timeout = TimeSpan.FromSeconds(30);
+            httpClient.Timeout = TimeoutConstants.DefaultHttpRequest;
 
             // Add comprehensive browser headers to bypass 403 Forbidden
-            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            httpClient.DefaultRequestHeaders.Add("User-Agent", ModDBConstants.BrowserUserAgent);
             httpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
             httpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
         }).ConfigurePrimaryHttpMessageHandler(() =>
@@ -324,10 +315,8 @@ public static class ContentPipelineModule
 
         // Register ModDB page parser
         services.AddSingleton<ModDBPageParser>();
-        // Register ModDB page parser
-        services.AddSingleton<ModDBPageParser>();
+        services.AddSingleton<IWebPageParser>(sp => sp.GetRequiredService<ModDBPageParser>());
 
-        // Register ModDB discoverer (concrete and interface) with named HttpClient
         // Register ModDB discoverer (concrete and interface)
         services.AddSingleton<ModDBDiscoverer>();
         services.AddSingleton<IContentDiscoverer>(sp => sp.GetRequiredService<ModDBDiscoverer>());
@@ -346,10 +335,9 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers Local File System content pipeline services.
-    /// <summary>
     /// Registers Local File System content pipeline services — provider, discoverer, manifest resolver, and deliverer — into the provided IServiceCollection.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     private static void AddLocalFileSystemPipeline(IServiceCollection services)
     {
         // Register Local File System content provider
@@ -370,28 +358,25 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers AODMaps content pipeline services.
-    /// <summary>
     /// Registers the AODMaps content-pipeline components and a named HttpClient into the provided service collection.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     /// <remarks>
-    /// Adds a named "AODMaps" HttpClient and singleton registrations for the page parser, IWebPageParser, discoverer, resolver, content provider, and publisher manifest factory.
+    /// Adds a named HttpClient using AODMapsConstants.PublisherPrefix and singleton registrations for the page parser, IWebPageParser, discoverer, resolver, content provider, and publisher manifest factory.
     /// </remarks>
     private static void AddAODMapsPipeline(IServiceCollection services)
     {
         // Register named HttpClient for AODMaps
-        services.AddHttpClient("AODMaps", client =>
+        services.AddHttpClient(AODMapsConstants.PublisherPrefix, client =>
         {
             client.BaseAddress = new Uri(AODMapsConstants.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = TimeoutConstants.DefaultHttpRequest;
             client.DefaultRequestHeaders.Add("User-Agent", "GenHub/1.0");
         });
 
-        // Register AODMaps page parser (Concrete)
+        // Register AODMaps page parser (Concrete and Interface)
         services.AddSingleton<AODMapsPageParser>();
-
-        // Register AODMaps page parser (Concrete)
-        services.AddSingleton<AODMapsPageParser>();
+        services.AddSingleton<IWebPageParser>(sp => sp.GetRequiredService<AODMapsPageParser>());
 
         // Register AODMaps discoverer
         services.AddSingleton<GenHub.Features.Content.Services.ContentDiscoverers.AODMapsDiscoverer>();
@@ -411,10 +396,9 @@ public static class ContentPipelineModule
     }
 
     /// <summary>
-    /// Registers shared components used across multiple pipelines.
-    /// <summary>
     /// Registers services and shared components used by multiple content pipelines.
     /// </summary>
+    /// <param name="services">The service collection to configure.</param>
     /// <remarks>
     /// Registers:
     /// - HttpContentDeliverer and its IContentDeliverer mapping,
@@ -422,7 +406,7 @@ public static class ContentPipelineModule
     /// - IContentPipelineFactory (ContentPipelineFactory),
     /// - PublisherCardViewModel (transient),
     /// - IContentValidator (ContentValidator),
-    /// - IContentStateService (scoped ContentStateService).
+    /// - IContentStateService (singleton ContentStateService).
     /// </remarks>
     private static void AddSharedComponents(IServiceCollection services)
     {
@@ -441,6 +425,6 @@ public static class ContentPipelineModule
         services.AddSingleton<IContentValidator, ContentValidator>();
 
         // Register content state service for determining download/update state
-        services.AddScoped<IContentStateService, ContentStateService>();
+        services.AddSingleton<IContentStateService, ContentStateService>();
     }
 }

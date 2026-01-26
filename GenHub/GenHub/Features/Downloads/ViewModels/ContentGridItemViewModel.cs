@@ -18,7 +18,7 @@ namespace GenHub.Features.Downloads.ViewModels;
 /// <summary>
 /// ViewModel for a content item displayed in the content grid.
 /// </summary>
-public partial class ContentGridItemViewModel : ObservableObject
+public partial class ContentGridItemViewModel : ObservableObject, IDisposable
 {
     private static readonly HttpClient _imageClient = new()
     {
@@ -26,6 +26,8 @@ public partial class ContentGridItemViewModel : ObservableObject
     };
 
     private readonly ILogger<ContentGridItemViewModel>? _logger;
+    private readonly System.Threading.CancellationTokenSource _cts = new();
+    private bool _disposed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanDownload))]
@@ -56,19 +58,32 @@ public partial class ContentGridItemViewModel : ObservableObject
     private Bitmap? _iconBitmap;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ContentGridItemViewModel"/> class.
-    /// </summary>
-    /// <param name="searchResult">The content search result.</param>
-    /// <summary>
-    /// Initializes a view model for the given content search result.
+    /// Initializes a new instance of the <see cref="ContentGridItemViewModel"/> class with the specified search result and optional logger.
     /// </summary>
     /// <param name="searchResult">The content search result used to populate the view model; must not be null.</param>
+    /// <param name="logger">The optional logger for this view model.</param>
     public ContentGridItemViewModel(ContentSearchResult searchResult, ILogger<ContentGridItemViewModel>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(searchResult);
         SearchResult = searchResult;
         _logger = logger;
+
+        // Start loading the icon asynchronously
         _ = LoadIconAsync();
+    }
+
+    /// <summary>
+    /// Disposes task-related resources.
+    /// </summary>
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _disposed = true;
+            GC.SuppressFinalize(this);
+        }
     }
 
     /// <summary>
@@ -94,14 +109,20 @@ public partial class ContentGridItemViewModel : ObservableObject
             }
             else
             {
-                var bytes = await _imageClient.GetByteArrayAsync(IconUrl);
+                var bytes = await _imageClient.GetByteArrayAsync(IconUrl, _cts.Token);
+                if (_cts.Token.IsCancellationRequested) return;
+
                 using var stream = new MemoryStream(bytes);
                 IconBitmap = new Bitmap(stream);
             }
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // Ignore load failures, fallback will be shown
+            // Expected on disposal
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to load icon for content {ContentName} from URL {IconUrl}", Name, IconUrl);
         }
     }
 
@@ -128,10 +149,17 @@ public partial class ContentGridItemViewModel : ObservableObject
     /// <summary>
     /// Gets the truncated description for card display.
     /// </summary>
-    public string ShortDescription =>
-        Description.Length > 150
-            ? Description[..147] + "..."
-            : Description;
+    public string ShortDescription
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Description)) return string.Empty;
+            var stringInfo = new System.Globalization.StringInfo(Description);
+            return stringInfo.LengthInTextElements > 150
+                ? stringInfo.SubstringByTextElements(0, 147) + "..."
+                : Description;
+        }
+    }
 
     /// <summary>
     /// Gets the content version.
@@ -232,9 +260,6 @@ public partial class ContentGridItemViewModel : ObservableObject
     /// <summary>
     /// Gets a value indicating whether the Add to Profile button should be shown.
     /// </summary>
-    /// <summary>
-    /// Gets a value indicating whether the Add to Profile button should be shown.
-    /// </summary>
     public bool ShowAddToProfileButton => CurrentState == ContentState.Downloaded || CurrentState == ContentState.UpdateAvailable;
 
     /// <summary>
@@ -244,31 +269,34 @@ public partial class ContentGridItemViewModel : ObservableObject
 
     /// <summary>
     /// Gets or sets the command to view details.
+    /// Expected to be set by the parent view model to handle navigation or detail display.
     /// </summary>
     public System.Windows.Input.ICommand? ViewCommand { get; set; }
 
     /// <summary>
     /// Gets or sets the command to open the source URL.
+    /// Expected to be set by the parent view model or a global service.
     /// </summary>
     public System.Windows.Input.ICommand? OpenUrlCommand { get; set; }
 
     /// <summary>
     /// Gets or sets the command to download the content.
+    /// Expected to be set by the parent view model to handle the download workflow.
     /// </summary>
     public System.Windows.Input.ICommand? DownloadCommand { get; set; }
 
     /// <summary>
     /// Gets or sets the command to add content to a profile.
+    /// Expected to be set by the parent view model to handle profile association.
     /// </summary>
     public System.Windows.Input.ICommand? AddToProfileCommand { get; set; }
 
     /// <summary>
     /// Gets or sets the command to update the content (download newer version).
+    /// Expected to be set by the parent view model to handle the update workflow.
     /// </summary>
     public System.Windows.Input.ICommand? UpdateCommand { get; set; }
 
-    /// <summary>
-    /// Command to view content details.
     /// <summary>
     /// Executes the configured view command, passing this view model as the command parameter.
     /// </summary>
@@ -278,8 +306,6 @@ public partial class ContentGridItemViewModel : ObservableObject
         ViewCommand?.Execute(this);
     }
 
-    /// <summary>
-    /// Command to open source URL in browser.
     /// <summary>
     /// Opens the item's source URL by invoking the bound OpenUrlCommand when a source URL is available.
     /// </summary>
@@ -293,8 +319,6 @@ public partial class ContentGridItemViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Command to download content.
-    /// <summary>
     /// Executes the configured DownloadCommand using this view model as the command parameter.
     /// </summary>
     [RelayCommand]
@@ -303,8 +327,6 @@ public partial class ContentGridItemViewModel : ObservableObject
         DownloadCommand?.Execute(this);
     }
 
-    /// <summary>
-    /// Command to update content to newer version.
     /// <summary>
     /// Invokes the configured UpdateCommand, passing this view model as the command parameter if a command is set.
     /// </summary>
@@ -324,4 +346,22 @@ public partial class ContentGridItemViewModel : ObservableObject
     /// Gets a value indicating whether this content has multiple variants.
     /// </summary>
     public bool HasVariants => Variants.Count > 0;
+
+    partial void OnVariantsChanged(System.Collections.ObjectModel.ObservableCollection<InstallableVariant>? oldValue, System.Collections.ObjectModel.ObservableCollection<InstallableVariant> newValue)
+    {
+        if (oldValue != null)
+        {
+             oldValue.CollectionChanged -= Variants_CollectionChanged;
+        }
+
+        if (newValue != null)
+        {
+            newValue.CollectionChanged += Variants_CollectionChanged;
+        }
+    }
+
+    private void Variants_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasVariants));
+    }
 }

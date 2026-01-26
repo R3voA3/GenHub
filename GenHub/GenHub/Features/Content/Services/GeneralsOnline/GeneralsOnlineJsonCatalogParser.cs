@@ -152,14 +152,18 @@ public class GeneralsOnlineJsonCatalogParser(ILogger<GeneralsOnlineJsonCatalogPa
     private static GeneralsOnlineRelease CreateReleaseFromVersion(string version, ProviderDefinition provider)
     {
         var versionDate = ParseVersionDate(version) ?? DateTime.Now;
-        var releasesUrl = provider.Endpoints.GetEndpoint("releasesUrl");
+        var releasesUrl = provider.Endpoints.GetEndpoint("releasesUrl")?.TrimEnd('/');
+
+        var portableUrl = string.IsNullOrEmpty(releasesUrl)
+            ? string.Empty
+            : $"{releasesUrl}/GeneralsOnline_portable_{version}{GeneralsOnlineConstants.PortableExtension}";
 
         return new GeneralsOnlineRelease
         {
             Version = version,
             VersionDate = versionDate,
             ReleaseDate = versionDate,
-            PortableUrl = $"{releasesUrl}/GeneralsOnline_portable_{version}{GeneralsOnlineConstants.PortableExtension}",
+            PortableUrl = portableUrl,
             PortableSize = null, // Size unknown when using latest.txt fallback
             Changelog = $"Generals Online {version}",
         };
@@ -200,8 +204,6 @@ public class GeneralsOnlineJsonCatalogParser(ILogger<GeneralsOnlineJsonCatalogPa
     }
 
     /// <summary>
-    /// Creates a ContentSearchResult from a release and provider configuration.
-    /// <summary>
     /// Builds a ContentSearchResult representing the specified Generals Online release using the provided provider metadata.
     /// </summary>
     /// <param name="release">Release metadata to include in the search result.</param>
@@ -211,7 +213,7 @@ public class GeneralsOnlineJsonCatalogParser(ILogger<GeneralsOnlineJsonCatalogPa
         GeneralsOnlineRelease release,
         ProviderDefinition provider)
     {
-        var downloadPageUrl = provider.Endpoints.GetEndpoint("downloadPageUrl");
+        var downloadPageUrl = provider.Endpoints.GetEndpoint(ProviderEndpointConstants.DownloadPageUrl);
 
         var searchResult = new ContentSearchResult
         {
@@ -223,7 +225,7 @@ public class GeneralsOnlineJsonCatalogParser(ILogger<GeneralsOnlineJsonCatalogPa
             TargetGame = provider.TargetGame ?? GameType.ZeroHour,
             ProviderName = provider.PublisherType,
             AuthorName = GeneralsOnlineConstants.PublisherName,
-            IconUrl = provider.Endpoints.GetEndpoint("iconUrl") ?? GeneralsOnlineConstants.LogoSource,
+            IconUrl = provider.Endpoints.GetEndpoint(ProviderEndpointConstants.IconUrl) ?? GeneralsOnlineConstants.LogoSource,
             LastUpdated = release.ReleaseDate,
             DownloadSize = release.PortableSize ?? 0,
             RequiresResolution = true,

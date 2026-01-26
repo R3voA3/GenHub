@@ -55,15 +55,19 @@ public partial class GitHubResolver(
         try
         {
             // Extract metadata from the discovered item
-            if (!discoveredItem.ResolverMetadata.TryGetValue("owner", out var owner)
-                || !discoveredItem.ResolverMetadata.TryGetValue("repo", out var repo)
-                || !discoveredItem.ResolverMetadata.TryGetValue("tag", out var tag))
+            if (!discoveredItem.ResolverMetadata.TryGetValue(GitHubConstants.OwnerMetadataKey, out var owner)
+                || !discoveredItem.ResolverMetadata.TryGetValue(GitHubConstants.RepoMetadataKey, out var repo))
             {
                 return OperationResult<ContentManifest>.CreateFailure("Missing required metadata for GitHub resolution");
             }
 
+            if (!discoveredItem.ResolverMetadata.TryGetValue(GitHubConstants.TagMetadataKey, out var tag))
+            {
+                tag = "latest";
+            }
+
             // Check if this is a SINGLE ASSET selection (from multi-asset split)
-            if (discoveredItem.ResolverMetadata.TryGetValue("asset-name", out var assetName))
+            if (discoveredItem.ResolverMetadata.TryGetValue(GitHubConstants.AssetNameMetadataKey, out var assetName))
             {
                 logger.LogInformation(
                     "Resolving single asset: {AssetName} from {Owner}/{Repo}:{Tag}",
@@ -205,13 +209,13 @@ public partial class GitHubResolver(
     private static string DeterminePublisherType(string owner)
     {
         // Check for known publishers that have custom manifest factories
-        if (owner.Equals("thesuperhackers", StringComparison.OrdinalIgnoreCase))
+        if (owner.Equals(PublisherTypeConstants.TheSuperHackers, StringComparison.OrdinalIgnoreCase))
         {
-            return "thesuperhackers";
+            return PublisherTypeConstants.TheSuperHackers;
         }
 
         // Default to generic GitHub publisher
-        return "github";
+        return PublisherTypeConstants.GitHub;
     }
 
     /// <summary>
@@ -250,21 +254,8 @@ public partial class GitHubResolver(
     {
         var nameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(assetName);
 
-        // Common language patterns
-        var languagePatterns = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "english", "English" },
-            { "russian", "Russian" },
-            { "spanish", "Spanish" },
-            { "french", "French" },
-            { "german", "German" },
-            { "chinese", "Chinese" },
-            { "japanese", "Japanese" },
-            { "korean", "Korean" },
-        };
-
         // Check if filename contains a language keyword
-        foreach (var (pattern, displayName) in languagePatterns)
+        foreach (var (pattern, displayName) in GitHubConstants.LanguagePatterns)
         {
             if (nameWithoutExt.Contains(pattern, StringComparison.OrdinalIgnoreCase))
                 return displayName;

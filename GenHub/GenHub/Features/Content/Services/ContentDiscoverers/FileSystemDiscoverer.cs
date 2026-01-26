@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Constants;
+using GenHub.Core.Extensions;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Models.Content;
@@ -30,15 +31,21 @@ public class FileSystemDiscoverer : IContentDiscoverer
 
     /// <summary>
     /// Determines whether a content manifest satisfies the provided search query criteria.
+    /// Note: Content missing a release date is excluded when MinDate or MaxDate filters are specified.
     /// </summary>
     /// <param name="manifest">The content manifest to evaluate.</param>
     /// <param name="query">The search query containing optional filters (search term, content type, target game).</param>
     /// <returns>`true` if the manifest matches the query's search term (found in Name or Id, case-insensitive) and any specified ContentType and TargetGame; `false` otherwise.</returns>
     private static bool MatchesQuery(ContentManifest manifest, ContentSearchQuery query)
     {
+        if (manifest == null)
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(query.SearchTerm) &&
-            !manifest.Name.Contains(query.SearchTerm, StringComparison.OrdinalIgnoreCase) &&
-            !manifest.Id.Value.Contains(query.SearchTerm, StringComparison.OrdinalIgnoreCase))
+            !(manifest.Name?.Contains(query.SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false) &&
+            !(manifest.Id.Value?.Contains(query.SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false))
         {
             return false;
         }
@@ -53,16 +60,41 @@ public class FileSystemDiscoverer : IContentDiscoverer
             return false;
         }
 
+        if (!string.IsNullOrWhiteSpace(query.AuthorName) &&
+            !(manifest.Publisher?.Name?.Contains(query.AuthorName, StringComparison.OrdinalIgnoreCase) ?? false))
+        {
+            return false;
+        }
+
+        if (query.Tags != null && query.Tags.Count > 0)
+        {
+            var manifestTags = manifest.Metadata?.Tags ?? [];
+            if (!query.Tags.All(qt => manifestTags.Any(mt => string.Equals(mt, qt, StringComparison.OrdinalIgnoreCase))))
+            {
+                return false;
+            }
+        }
+
+        if (query.MinDate.HasValue || query.MaxDate.HasValue)
+        {
+            var releaseDate = manifest.Metadata?.ReleaseDate;
+
+            if (query.MinDate.HasValue && (releaseDate == null || releaseDate < query.MinDate.Value))
+            {
+                return false;
+            }
+
+            if (query.MaxDate.HasValue && (releaseDate == null || releaseDate > query.MaxDate.Value))
+            {
+                return false;
+            }
+        }
+
         return true;
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="FileSystemDiscoverer"/> class.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <param name="manifestDiscoveryService">The manifest discovery service.</param>
-    /// <summary>
-    /// Initializes a new FileSystemDiscoverer and loads content directories from configuration.
+    /// Initializes a new instance of the <see cref="FileSystemDiscoverer"/> class and loads content directories from configuration.
     /// </summary>
     /// <param name="logger">Logger for diagnostic and error messages.</param>
     /// <param name="manifestDiscoveryService">Service used to discover content manifests from file system locations.</param>
@@ -129,7 +161,7 @@ public class FileSystemDiscoverer : IContentDiscoverer
                     ProviderName = SourceName,
                     AuthorName = manifest.Publisher?.Name ?? GameClientConstants.UnknownVersion,
                     IconUrl = manifest.Metadata?.IconUrl ?? string.Empty,
-                    LastUpdated = manifest.Metadata?.ReleaseDate ?? DateTime.Now,
+                    LastUpdated = manifest.Metadata?.ReleaseDate,
                     DownloadSize = manifest.Files?.Sum(f => f.Size) ?? 0,
 
                     Data = manifest,
@@ -139,22 +171,14 @@ public class FileSystemDiscoverer : IContentDiscoverer
                 };
 
                 // Copy screenshots and tags
-                discovered.ScreenshotUrls.Clear();
                 if (manifest.Metadata?.ScreenshotUrls != null && manifest.Metadata.ScreenshotUrls.Count > 0)
                 {
-                    foreach (var s in manifest.Metadata.ScreenshotUrls)
-                    {
-                        discovered.ScreenshotUrls.Add(s);
-                    }
+                    discovered.ScreenshotUrls.AddRange(manifest.Metadata.ScreenshotUrls);
                 }
 
-                discovered.Tags.Clear();
                 if (manifest.Metadata?.Tags != null && manifest.Metadata.Tags.Count > 0)
                 {
-                    foreach (var t in manifest.Metadata.Tags)
-                    {
-                        discovered.Tags.Add(t);
-                    }
+                    discovered.Tags.AddRange(manifest.Metadata.Tags);
                 }
 
                 discoveredItems.Add(discovered);
@@ -171,7 +195,10 @@ public class FileSystemDiscoverer : IContentDiscoverer
     private void InitializeContentDirectories()
     {
         var userDefinedDirs = _configurationProvider.GetContentDirectories();
-        _contentDirectories.AddRange(userDefinedDirs.Where(Directory.Exists));
+        if (userDefinedDirs != null)
+        {
+            _contentDirectories.AddRange(userDefinedDirs.Where(Directory.Exists));
+        }
 
         _logger.LogInformation("FileSystemDiscoverer initialized with {Count} directories", _contentDirectories.Count);
     }

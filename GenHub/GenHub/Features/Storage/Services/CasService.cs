@@ -74,6 +74,10 @@ public class CasService(
             logger.LogInformation("Stored content in CAS: {Hash} from {SourcePath}", hash, sourcePath);
             return OperationResult<string>.CreateSuccess(hash);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to store content in CAS from {SourcePath}", sourcePath);
@@ -134,6 +138,10 @@ public class CasService(
             logger.LogInformation("Stored content in CAS: {Hash}", hash);
             return OperationResult<string>.CreateSuccess(hash);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to store stream content in CAS");
@@ -154,6 +162,10 @@ public class CasService(
 
             return OperationResult<string>.CreateFailure($"Content not found in CAS: {hash}");
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get content path for hash {Hash}", hash);
@@ -168,6 +180,10 @@ public class CasService(
         {
             var exists = await storage.ObjectExistsAsync(hash, cancellationToken);
             return OperationResult<bool>.CreateSuccess(exists);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -188,6 +204,10 @@ public class CasService(
             }
 
             return OperationResult<Stream>.CreateSuccess(stream);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -241,6 +261,10 @@ public class CasService(
                         objectsDeleted++;
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to delete unreferenced object {Hash}", hash);
@@ -251,6 +275,10 @@ public class CasService(
             result.BytesFreed = bytesFreed;
 
             logger.LogInformation("CAS garbage collection completed: {ObjectsDeleted} objects deleted, {BytesFreed} bytes freed", objectsDeleted, bytesFreed);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -305,6 +333,10 @@ public class CasService(
                         });
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     result.Issues.Add(new CasValidationIssue
@@ -318,6 +350,10 @@ public class CasService(
             }
 
             logger.LogInformation("CAS integrity validation completed: {ObjectsValidated} objects validated, {Issues} issues found", result.ObjectsValidated, result.ObjectsWithIssues);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -349,12 +385,17 @@ public class CasService(
             {
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var objectPath = storage.GetObjectPath(hash);
                     if (File.Exists(objectPath))
                     {
                         var fileInfo = new FileInfo(objectPath);
                         totalSize += fileInfo.Length;
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch
                 {
@@ -364,6 +405,10 @@ public class CasService(
 
             stats.TotalSize = totalSize;
             return stats;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -431,6 +476,10 @@ public class CasService(
 
             logger.LogInformation("Stored content in CAS pool ({ContentType}): {Hash} from {SourcePath}", contentType, hash, sourcePath);
             return OperationResult<string>.CreateSuccess(hash);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -503,6 +552,10 @@ public class CasService(
             logger.LogInformation("Stored content in CAS pool ({ContentType}): {Hash}", contentType, hash);
             return OperationResult<string>.CreateSuccess(hash);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to store stream content in CAS pool ({ContentType})", contentType);
@@ -534,6 +587,10 @@ public class CasService(
 
             return OperationResult<string>.CreateFailure($"Content not found in CAS pool ({contentType}): {hash}");
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get content path for hash {Hash} in pool ({ContentType})", hash, contentType);
@@ -558,6 +615,10 @@ public class CasService(
             var storage = poolManager.GetStorage(contentType);
             var exists = await storage.ObjectExistsAsync(hash, cancellationToken);
             return OperationResult<bool>.CreateSuccess(exists);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

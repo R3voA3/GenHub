@@ -8,7 +8,6 @@ using CommunityToolkit.Mvvm.Input;
 using GenHub.Core.Interfaces.GameProfiles;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.GameProfile;
-using GenHub.Core.Models.Results;
 using Microsoft.Extensions.Logging;
 
 namespace GenHub.Features.Downloads.ViewModels;
@@ -20,14 +19,12 @@ namespace GenHub.Features.Downloads.ViewModels;
 /// <remarks>
 /// Initializes a new instance of the <see cref="ProfileSelectionViewModel"/> class.
 /// </remarks>
-/// <param name="logger">The logger.</param>
-/// <param name="profileManager">The profile manager.</param>
-/// <param name="profileContentService">The profile content service.</param>
-public sealed partial class ProfileSelectionViewModel(
-    ILogger<ProfileSelectionViewModel> logger,
-    IGameProfileManager profileManager,
-    IProfileContentService profileContentService) : ObservableObject
+public sealed partial class ProfileSelectionViewModel : ObservableObject
 {
+    private readonly ILogger<ProfileSelectionViewModel> _logger;
+    private readonly IGameProfileManager _profileManager;
+    private readonly IProfileContentService _profileContentService;
+
     [ObservableProperty]
     private ObservableCollection<ProfileOptionViewModel> _compatibleProfiles = [];
 
@@ -54,6 +51,31 @@ public sealed partial class ProfileSelectionViewModel(
 
     [ObservableProperty]
     private string? _selectedProfileName;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ProfileSelectionViewModel"/> class.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="profileManager">The profile manager.</param>
+    /// <param name="profileContentService">The profile content service.</param>
+    public ProfileSelectionViewModel(
+        ILogger<ProfileSelectionViewModel> logger,
+        IGameProfileManager profileManager,
+        IProfileContentService profileContentService)
+    {
+        _logger = logger;
+        _profileManager = profileManager;
+        _profileContentService = profileContentService;
+
+        CompatibleProfiles.CollectionChanged += (s, e) => NotifyComputedProperties();
+        OtherProfiles.CollectionChanged += (s, e) => NotifyComputedProperties();
+    }
+
+    private void NotifyComputedProperties()
+    {
+        OnPropertyChanged(nameof(HasAnyProfiles));
+        OnPropertyChanged(nameof(ProfileSummary));
+    }
 
     /// <summary>
     /// Event raised when the dialog should be closed.
@@ -95,19 +117,13 @@ public sealed partial class ProfileSelectionViewModel(
     }
 
     /// <summary>
-    /// Filters profiles by compatibility with target game.
-    /// </summary>
-    /// <param name="targetGame">The target game type for compatibility.</param>
-    /// <param name="contentManifestId">The optional content manifest ID to be added.</param>
-    /// <param name="contentName">The optional content name for display.</param>
-    /// <param name="ct">The cancellation token.</param>
-    /// <summary>
     /// Loads all profiles, partitions them into profiles compatible with the specified target game and incompatible profiles, and updates the view model state accordingly.
     /// </summary>
+    /// <param name="targetGame">The target game type for compatibility.</param>
     /// <param name="contentManifestId">Optional content manifest identifier to associate with profiles when selecting or creating profiles.</param>
     /// <param name="contentName">Optional display name of the content used to derive new profile names when creating a profile.</param>
     /// <param name="ct">Cancellation token to cancel the load operation.</param>
-    /// <returns>Completes after the view model's profile lists and related state (TargetGame, ContentManifestId, ContentName, CompatibleProfiles, OtherProfiles, HasAnyProfiles, ProfileSummary, IsLoading, and ErrorMessage) have been updated.</returns>
+    /// <returns>Completes after the view model's profile lists and related state have been updated.</returns>
     public async Task LoadProfilesAsync(
         GameType targetGame,
         string? contentManifestId = null,
@@ -122,12 +138,12 @@ public sealed partial class ProfileSelectionViewModel(
 
         try
         {
-            var profilesResult = await profileManager.GetAllProfilesAsync(ct);
+            var profilesResult = await _profileManager.GetAllProfilesAsync(ct);
 
             if (!profilesResult.Success || profilesResult.Data == null)
             {
                 ErrorMessage = profilesResult.Errors != null ? string.Join(", ", profilesResult.Errors) : "Failed to load profiles";
-                logger.LogWarning("Failed to load profiles: {Error}", ErrorMessage);
+                _logger.LogWarning("Failed to load profiles: {Error}", ErrorMessage);
                 return;
             }
 
@@ -154,7 +170,7 @@ public sealed partial class ProfileSelectionViewModel(
             OnPropertyChanged(nameof(HasAnyProfiles));
             OnPropertyChanged(nameof(ProfileSummary));
 
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Loaded {CompatibleCount} compatible and {OtherCount} incompatible profiles for {TargetGame}",
                 CompatibleProfiles.Count,
                 OtherProfiles.Count,
@@ -167,7 +183,7 @@ public sealed partial class ProfileSelectionViewModel(
         catch (System.Exception ex)
         {
             ErrorMessage = $"Failed to load profiles: {ex.Message}";
-            logger.LogError(ex, "Failed to load profiles");
+            _logger.LogError(ex, "Failed to load profiles");
         }
         finally
         {
@@ -175,11 +191,6 @@ public sealed partial class ProfileSelectionViewModel(
         }
     }
 
-    /// <summary>
-    /// Determines if a profile is compatible with the target game type.
-    /// </summary>
-    /// <param name="profile">The profile to check.</param>
-    /// <param name="targetGame">The target game type.</param>
     /// <summary>
     /// Determines whether the given profile is compatible with the specified target game.
     /// </summary>
@@ -194,9 +205,6 @@ public sealed partial class ProfileSelectionViewModel(
     }
 
     /// <summary>
-    /// Selects a profile and optionally adds content to it.
-    /// </summary>
-    /// <summary>
     /// Selects the provided profile option; if content is specified on the view model, attempts to add that content to the profile, then requests the dialog to close.
     /// </summary>
     /// <param name="option">The profile option to select; if null the selection is ignored.</param>
@@ -208,7 +216,7 @@ public sealed partial class ProfileSelectionViewModel(
     {
         if (option == null)
         {
-            logger.LogWarning("No profile selected");
+            _logger.LogWarning("No profile selected");
             return;
         }
 
@@ -218,20 +226,20 @@ public sealed partial class ProfileSelectionViewModel(
         {
             if (string.IsNullOrEmpty(ContentManifestId))
             {
-                logger.LogInformation("Profile '{ProfileName}' selected (no content to add)", profile.Name);
+                _logger.LogInformation("Profile '{ProfileName}' selected (no content to add)", profile.Name);
                 SelectedProfileName = profile.Name;
                 WasSuccessful = true;
                 RequestClose?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Adding content '{ContentName}' ({ContentId}) to profile '{ProfileName}'",
                 ContentName,
                 ContentManifestId,
                 profile.Name);
 
-            var result = await profileContentService.AddContentToProfileAsync(
+            var result = await _profileContentService.AddContentToProfileAsync(
                 profile.Id,
                 ContentManifestId,
                 CancellationToken.None);
@@ -240,7 +248,7 @@ public sealed partial class ProfileSelectionViewModel(
             {
                 if (result.WasContentSwapped)
                 {
-                    logger.LogInformation(
+                    _logger.LogInformation(
                         "Content swap: replaced {OldContent} with {NewContent} in profile {ProfileName}",
                         result.SwappedContentName,
                         ContentName,
@@ -248,7 +256,7 @@ public sealed partial class ProfileSelectionViewModel(
                 }
                 else
                 {
-                    logger.LogInformation("Successfully added content to profile '{ProfileName}'", profile.Name);
+                    _logger.LogInformation("Successfully added content to profile '{ProfileName}'", profile.Name);
                 }
 
                 SelectedProfileName = profile.Name;
@@ -256,7 +264,7 @@ public sealed partial class ProfileSelectionViewModel(
             }
             else
             {
-                logger.LogError(
+                _logger.LogError(
                     "Failed to add content to profile '{ProfileName}': {Error}",
                     profile.Name,
                     result.FirstError);
@@ -266,7 +274,7 @@ public sealed partial class ProfileSelectionViewModel(
         }
         catch (System.Exception ex)
         {
-            logger.LogError(ex, "Error adding content to profile '{ProfileName}'", profile.Name);
+            _logger.LogError(ex, "Error adding content to profile '{ProfileName}'", profile.Name);
             ErrorMessage = ex.Message;
             WasSuccessful = false;
         }
@@ -275,8 +283,6 @@ public sealed partial class ProfileSelectionViewModel(
         RequestClose?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>
-    /// Cancels the profile selection and closes the dialog.
     /// <summary>
     /// Cancels the selection and requests the dialog to close without selecting a profile.
     /// </summary>
@@ -289,10 +295,9 @@ public sealed partial class ProfileSelectionViewModel(
     }
 
     /// <summary>
-    /// Creates a new profile with the current content pre-enabled.
-    /// <summary>
     /// Creates a new profile pre-populated with the current content manifest and refreshes the profile list on success.
     /// </summary>
+    /// <returns>A task representing the profile creation operation.</returns>
     /// <remarks>
     /// If <see cref="ContentManifestId"/> is null or empty the method exits without action. The method derives a base name from <see cref="ContentName"/>, ensures the profile name is unique by appending " (n)" when necessary, and calls the content service to create the profile. On successful creation the profile list is reloaded for <see cref="TargetGame"/>; failures are logged but not thrown. Exceptions are caught and logged. This method is executed as an async command.
     /// </remarks>
@@ -301,13 +306,13 @@ public sealed partial class ProfileSelectionViewModel(
     {
         if (string.IsNullOrEmpty(ContentManifestId))
         {
-            logger.LogWarning("Cannot create profile: no content manifest ID provided");
+            _logger.LogWarning("Cannot create profile: no content manifest ID provided");
             return;
         }
 
         try
         {
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Creating new profile for content '{ContentName}' ({ContentId})",
                 ContentName ?? "Unknown",
                 ContentManifestId);
@@ -322,35 +327,31 @@ public sealed partial class ProfileSelectionViewModel(
                 profileName = $"{baseName} ({counter++})";
             }
 
-            var result = await profileContentService.CreateProfileWithContentAsync(
+            var result = await _profileContentService.CreateProfileWithContentAsync(
                 profileName,
                 ContentManifestId,
                 CancellationToken.None);
 
             if (result.Success && result.Data != null)
             {
-                logger.LogInformation("Successfully created profile '{ProfileName}'", result.Data.Name);
+                _logger.LogInformation("Successfully created profile '{ProfileName}'", result.Data.Name);
 
                 // Refresh the profile list
                 await LoadProfilesAsync(TargetGame, ContentManifestId, ContentName);
             }
             else
             {
-                logger.LogError(
+                _logger.LogError(
                     "Failed to create profile: {Error}",
                     result.FirstError ?? "Unknown error");
             }
         }
         catch (System.Exception ex)
         {
-            logger.LogError(ex, "Exception creating profile with content");
+            _logger.LogError(ex, "Exception creating profile with content");
         }
     }
 
-    /// <summary>
-    /// Checks if a profile with the given name already exists.
-    /// </summary>
-    /// <param name="profileName">The profile name to check.</param>
     /// <summary>
     /// Determines whether a profile with the specified name exists.
     /// </summary>
@@ -358,7 +359,7 @@ public sealed partial class ProfileSelectionViewModel(
     /// <returns>`true` if a profile with the given name exists, `false` otherwise.</returns>
     private async Task<bool> ProfileExistsAsync(string profileName)
     {
-        var profilesResult = await profileManager.GetAllProfilesAsync(CancellationToken.None);
+        var profilesResult = await _profileManager.GetAllProfilesAsync(CancellationToken.None);
         if (profilesResult.Success && profilesResult.Data != null)
         {
             return profilesResult.Data.Any(p =>

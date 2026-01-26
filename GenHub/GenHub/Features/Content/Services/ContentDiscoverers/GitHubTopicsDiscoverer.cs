@@ -26,11 +26,10 @@ public partial class GitHubTopicsDiscoverer(
     IGitHubApiClient gitHubApiClient,
     ILogger<GitHubTopicsDiscoverer> logger) : IContentDiscoverer
 {
-    [System.Text.RegularExpressions.GeneratedRegex(@"[^\d]")]
-    private static partial System.Text.RegularExpressions.Regex NonDigitRegex();
-
     /// <summary>Maximum number of tags to include in search result.</summary>
     private const int MaxTagsToInclude = 10;
+
+    private static readonly string[] _standaloneExtensions = [".big", ".csf", ".ini", ".w3d", ".dds", ".tga"];
 
     /// <summary>Rate limit delay between API calls in milliseconds.</summary>
     private static readonly TimeSpan RateLimitDelay = TimeSpan.FromMilliseconds(100);
@@ -64,35 +63,19 @@ public partial class GitHubTopicsDiscoverer(
         public static partial System.Text.RegularExpressions.Regex NonDigitPattern();
 
         /// <summary>
-        /// Common resolution display names for user-friendly output.
+        /// Gets common resolution display names for user-friendly output.
         /// </summary>
-        public static readonly Dictionary<string, string> ResolutionDisplayNames = new(StringComparer.OrdinalIgnoreCase)
-        {
-            { "1280x720", "720p" },
-            { "1366x768", "768p" },
-            { "1600x900", "900p" },
-            { "1920x1080", "1080p" },
-            { "2560x1440", "1440p" },
-            { "3840x2160", "4K" },
-            { "5120x2880", "5K" },
-            { "7680x4320", "8K" },
-        };
+        public static IReadOnlyDictionary<string, string> ResolutionDisplayNames => GitHubConstants.ResolutionDisplayNames;
 
         /// <summary>
-        /// File extensions that are archives and should be checked for variants.
+        /// Gets file extensions that are archives and should be checked for variants.
         /// </summary>
-        public static readonly string[] ArchiveExtensions =
-        [
-            ".zip", ".7z", ".rar", ".tar.gz", ".tgz",
-        ];
+        public static IEnumerable<string> ArchiveExtensions => GitHubConstants.ArchiveExtensions;
 
         /// <summary>
-        /// Filenames to exclude from variant splitting (source code, etc.).
+        /// Gets filenames to exclude from variant splitting (source code, etc.).
         /// </summary>
-        public static readonly string[] ExcludedPatterns =
-        [
-            "source", "src", "debug", "symbols", "pdb",
-        ];
+        public static IEnumerable<string> ExcludedPatterns => GitHubConstants.ExcludedPatterns;
     }
 
     /// <inheritdoc />
@@ -219,9 +202,6 @@ public partial class GitHubTopicsDiscoverer(
             return OperationResult<ContentDiscoveryResult>.CreateFailure($"GitHub Topics discovery failed: {ex.Message}");
         }
     }
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"(\d{3,4}x\d{3,4})")]
-    private static partial System.Text.RegularExpressions.Regex MyRegex();
 
     /// <summary>
     /// Infers ContentType from repository topics.
@@ -353,17 +333,22 @@ public partial class GitHubTopicsDiscoverer(
         if (release.Assets == null || release.Assets.Count <= 1)
             return false;
 
+        // Filter out source code assets before determining if we should split
+        var contentAssets = release.Assets.Where(a => !IsSourceCodeAsset(a.Name)).ToList();
+        if (contentAssets.Count <= 1)
+            return false;
+
         // Count standalone files (non-archive extensions)
-        string[] standaloneExtensions = [".big", ".csf", ".ini", ".w3d", ".dds", ".tga", ".zip"];
-        var standaloneCount = release.Assets.Count(a =>
-            standaloneExtensions.Any(ext => a.Name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
+        // Note: We exclude .zip here because it's handled as an archive variant
+        var standaloneCount = contentAssets.Count(a =>
+            _standaloneExtensions.Any(ext => a.Name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
 
         if (standaloneCount > 1)
             return true;
 
         // Check 2: Multiple archives with resolution variants
-        var archiveAssets = release.Assets
-            .Where(a => !IsSourceCodeAsset(a.Name) && IsArchiveAsset(a.Name))
+        var archiveAssets = contentAssets
+            .Where(a => IsArchiveAsset(a.Name))
             .ToList();
 
         if (archiveAssets.Count > 1 && HasVariantPattern(archiveAssets))
@@ -388,16 +373,12 @@ public partial class GitHubTopicsDiscoverer(
         if (resolutionMatches.Count > 1)
             return true;
 
-        // Check for language variants (reuse existing language patterns)
-        var languagePatterns = new[]
-        {
-            "english", "russian", "spanish", "french", "german",
-            "chinese", "japanese", "korean", "italian", "portuguese",
-        };
+        // Check for language variants (reuse existing language patterns from constants)
+        var languagePatterns = GitHubConstants.LanguagePatterns.Keys;
 
         var languageMatches = assets
             .Select(a => a.Name.ToLowerInvariant())
-            .SelectMany(name => languagePatterns.Where(lang => name.Contains(lang)))
+            .SelectMany(name => languagePatterns.Where(lang => name.Contains(lang, StringComparison.OrdinalIgnoreCase)))
             .Distinct()
             .ToList();
 
@@ -444,7 +425,7 @@ public partial class GitHubTopicsDiscoverer(
             return 0;
 
         // Extract all digits and concatenate
-        var digits = NonDigitRegex().Replace(tag, string.Empty);
+        var digits = VariantPatterns.NonDigitPattern().Replace(tag, string.Empty);
 
         if (string.IsNullOrEmpty(digits))
             return 0;
@@ -480,20 +461,8 @@ public partial class GitHubTopicsDiscoverer(
                 : resolution;
         }
 
-        // Check for language patterns
-        var languagePatterns = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "english", "English" },
-            { "russian", "Russian" },
-            { "spanish", "Spanish" },
-            { "french", "French" },
-            { "german", "German" },
-            { "chinese", "Chinese" },
-            { "japanese", "Japanese" },
-            { "korean", "Korean" },
-            { "italian", "Italian" },
-            { "portuguese", "Portuguese" },
-        };
+        // Check for language patterns from centralized constants
+        var languagePatterns = GitHubConstants.LanguagePatterns;
 
         // Check if filename contains a resolution (e.g., 1920x1080)
         // Note: Resolution matching is already handled by VariantPatterns.ResolutionPattern() above.
@@ -516,7 +485,8 @@ public partial class GitHubTopicsDiscoverer(
 
     /// <summary>
     /// Creates ContentSearchResults from a repository and optional release.
-    /// Detects multi-asset releases and creates separate results for each variant.
+    /// Always creates a single result per repository - variants are stored as data
+    /// and displayed in the Files tab of the detail view.
     /// </summary>
     private List<ContentSearchResult> CreateSearchResults(
         GitHubRepositorySearchItem repo,
@@ -525,7 +495,11 @@ public partial class GitHubTopicsDiscoverer(
     {
         var results = new List<ContentSearchResult>();
 
-        // Check if this is a multi-variant release
+        // Always create single result for the entire release
+        // Variants are stored in the search result data and shown in Files tab
+        var result = CreateSearchResult(repo, latestRelease, sourceTopic);
+
+        // If this is a multi-variant release, store variant info for display in Files tab
         if (latestRelease != null && ShouldSplitAssets(latestRelease))
         {
             // Filter to only content assets (exclude source code)
@@ -534,118 +508,32 @@ public partial class GitHubTopicsDiscoverer(
                 .ToList();
 
             logger.LogInformation(
-                "Detected multi-variant release for {Repo}: {AssetCount} content assets",
+                "Multi-variant release detected for {Repo}: {AssetCount} content assets will be shown in Files tab",
                 repo.FullName,
                 contentAssets.Count);
 
-            // Create separate result for each content asset
-            foreach (var asset in contentAssets)
+            // Store variants as metadata for the detail view to consume
+            result.ResolverMetadata[GitHubTopicsConstants.HasVariantsMetadataKey] = "true";
+            result.ResolverMetadata[GitHubTopicsConstants.VariantCountMetadataKey] = contentAssets.Count.ToString();
+
+            // DownloadSize is already filtered in CreateSearchResult
+
+            // Create variant artifact list
+            var variants = contentAssets.Select(asset => new GitHubVariantArtifact
             {
-                var assetResult = CreateSearchResultForAsset(repo, latestRelease, asset, sourceTopic);
-                results.Add(assetResult);
-            }
-        }
-        else
-        {
-            // Single result for the entire release
-            var result = CreateSearchResult(repo, latestRelease, sourceTopic);
-            results.Add(result);
+                Name = asset.Name,
+                DisplayName = ExtractAssetVariant(asset.Name),
+                DownloadUrl = asset.BrowserDownloadUrl,
+                SizeInBytes = asset.Size,
+                AssetId = asset.Id,
+            }).ToList();
+
+            // Store variants for the detail view
+            result.SetData(GitHubTopicsConstants.VariantsJsDataKey, variants);
         }
 
+        results.Add(result);
         return results;
-    }
-
-    /// <summary>
-    /// Creates a ContentSearchResult for a single release asset.
-    /// </summary>
-    private ContentSearchResult CreateSearchResultForAsset(
-        GitHubRepositorySearchItem repo,
-        GitHubRelease release,
-        GitHubReleaseAsset asset,
-        string sourceTopic)
-    {
-        // Infer content type from topics first, then fall back to name-based inference
-        var (contentType, isTypeInferred) = InferContentTypeFromTopics(repo.Topics);
-        if (isTypeInferred)
-        {
-            var nameInference = GitHubInferenceHelper.InferContentType(repo.Name, release.Name);
-            contentType = nameInference.Type;
-        }
-
-        // Infer game type
-        var (gameType, isGameInferred) = InferGameTypeFromTopics(repo.Topics);
-        if (isGameInferred)
-        {
-            var nameInference = GitHubInferenceHelper.InferTargetGame(repo.Name, release.Name);
-            gameType = nameInference.Type;
-        }
-
-        // Extract asset variant name (e.g., "English" from "0_ImprovedMenusEnglish.big")
-        var assetVariant = ExtractAssetVariant(asset.Name);
-
-        // Generate unique manifest ID including asset variant
-        // Content name: reponame + variantname (owner is publisher, tag is version)
-        // This ensures each variant gets a unique ID after normalization
-        var version = release.TagName ?? "latest";
-        var userVersion = ExtractVersionFromTag(version);
-        var contentName = $"{repo.Name}{assetVariant}";
-
-        var manifestId = ManifestIdGenerator.GeneratePublisherContentId(
-            repo.Owner.Login,
-            contentType,
-            contentName,
-            userVersion);
-
-        var result = new ContentSearchResult
-        {
-            Id = manifestId,
-            Name = $"{repo.Name} ({assetVariant})", // Show variant in name
-            Description = repo.Description ?? $"Community content from {repo.Owner.Login}/{repo.Name}",
-            Version = version,
-            AuthorName = repo.Owner.Login,
-            ContentType = contentType,
-            TargetGame = gameType,
-            IsInferred = isTypeInferred || isGameInferred,
-            ProviderName = SourceName,
-            RequiresResolution = true,
-            ResolverId = GitHubConstants.GitHubReleaseResolverId,
-            SourceUrl = repo.HtmlUrl,
-            LastUpdated = release.PublishedAt?.DateTime ?? repo.UpdatedAt,
-            DownloadSize = asset.Size,
-        };
-
-        // Add tags from topics
-        foreach (var topic in repo.Topics.Take(MaxTagsToInclude))
-        {
-            result.Tags.Add(topic);
-        }
-
-        // Add variant tag
-        result.Tags.Add(assetVariant.ToLowerInvariant());
-
-        // Add resolver metadata
-        result.ResolverMetadata[GitHubConstants.OwnerMetadataKey] = repo.Owner.Login;
-        result.ResolverMetadata[GitHubConstants.RepoMetadataKey] = repo.Name;
-        result.ResolverMetadata[GitHubConstants.TagMetadataKey] = version;
-        result.ResolverMetadata[GitHubTopicsConstants.SourceTopicMetadataKey] = sourceTopic;
-        result.ResolverMetadata[GitHubTopicsConstants.StarCountMetadataKey] = repo.StargazersCount.ToString();
-        result.ResolverMetadata[GitHubTopicsConstants.ForkCountMetadataKey] = repo.ForksCount.ToString();
-        result.ResolverMetadata["asset-name"] = asset.Name; // Store asset name for resolution
-        if (!string.IsNullOrEmpty(repo.Language))
-        {
-            result.ResolverMetadata[GitHubTopicsConstants.LanguageMetadataKey] = repo.Language;
-        }
-
-        // Store the single asset for resolution
-        result.SetData(new GitHubArtifact
-        {
-            Name = asset.Name,
-            DownloadUrl = asset.BrowserDownloadUrl,
-            SizeInBytes = asset.Size,
-            IsRelease = true,
-        });
-
-        return result;
     }
 
     /// <summary>
@@ -695,7 +583,8 @@ public partial class GitHubTopicsDiscoverer(
             ResolverId = GitHubConstants.GitHubReleaseResolverId, // Use existing GitHub resolver
             SourceUrl = repo.HtmlUrl,
             LastUpdated = latestRelease?.PublishedAt?.DateTime ?? repo.UpdatedAt,
-            DownloadSize = latestRelease?.Assets.Sum(a => a.Size) ?? 0,
+            DownloadSize = latestRelease?.Assets?.Where(a => !IsSourceCodeAsset(a.Name)).Sum(a => a.Size) ?? 0,
+            IconUrl = repo.Owner.AvatarUrl,
         };
 
         // Add tags from topics

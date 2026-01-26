@@ -83,9 +83,9 @@ public partial class MainViewModel(
     public GameProfileLauncherViewModel GameProfilesViewModel { get; } = gameProfilesViewModel;
 
     /// <summary>
-    /// Gets the downloads view model.
+    /// Gets the downloads browser view model.
     /// </summary>
-    public DownloadsBrowserViewModel DownloadsViewModel { get; } = downloadsViewModel;
+    public DownloadsBrowserViewModel DownloadsBrowserViewModel { get; } = downloadsViewModel;
 
     /// <summary>
     /// Gets the tools view model.
@@ -125,7 +125,7 @@ public partial class MainViewModel(
     public object CurrentTabViewModel => SelectedTab switch
     {
         NavigationTab.GameProfiles => GameProfilesViewModel,
-        NavigationTab.Downloads => DownloadsViewModel,
+        NavigationTab.Downloads => DownloadsBrowserViewModel,
         NavigationTab.Tools => ToolsViewModel,
         NavigationTab.Settings => SettingsViewModel,
         NavigationTab.Info => InfoViewModel,
@@ -167,9 +167,6 @@ public partial class MainViewModel(
     }
 
     /// <summary>
-    /// Performs asynchronous initialization for the shell and all tabs.
-    /// </summary>
-    /// <summary>
     /// Performs startup for the MainViewModel: registers message handlers, initializes child tab view models, triggers the initial tab activation, and starts background update and quickstart checks.
     /// </summary>
     /// <returns>A task that completes when initialization and the immediate setup steps have finished.</returns>
@@ -177,7 +174,7 @@ public partial class MainViewModel(
     {
         RegisterMessages();
         await GameProfilesViewModel.InitializeAsync();
-        await DownloadsViewModel.InitializeAsync();
+        await DownloadsBrowserViewModel.InitializeAsync();
         await ToolsViewModel.InitializeAsync();
         await InfoViewModel.InitializeAsync();
         logger?.LogInformation("MainViewModel initialized");
@@ -409,7 +406,10 @@ public partial class MainViewModel(
         }
         else if (value == NavigationTab.Downloads)
         {
-            _ = DownloadsViewModel.OnTabActivatedAsync();
+            if (!DownloadsBrowserViewModel.IsRefreshing)
+            {
+                _ = DownloadsBrowserViewModel.OnTabActivatedAsync();
+            }
         }
         else if (value == NavigationTab.Tools)
         {

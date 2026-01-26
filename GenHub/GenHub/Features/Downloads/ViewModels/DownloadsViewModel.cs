@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -10,6 +11,7 @@ using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Notifications;
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
+using GenHub.Core.Models.Results.Content;
 using GenHub.Features.Content.Services.CommunityOutpost;
 using GenHub.Features.Content.Services.ContentDiscoverers;
 using GenHub.Features.Content.Services.GeneralsOnline;
@@ -29,6 +31,12 @@ public partial class DownloadsViewModel(
     GitHubTopicsDiscoverer gitHubTopicsDiscoverer) : ViewModelBase, IRecipient<GenHub.Core.Messages.OpenPublisherDetailsMessage>, IRecipient<GenHub.Core.Messages.ClosePublisherDetailsMessage>
 {
     private bool _isPublisherContentPopulated;
+    private PublisherCardViewModel? _generalsOnlineCard;
+    private PublisherCardViewModel? _superHackersCard;
+    private PublisherCardViewModel? _communityOutpostCard;
+    private PublisherCardViewModel? _githubCard;
+    private PublisherCardViewModel? _cncLabsCard;
+    private PublisherCardViewModel? _modDBCard;
 
     [ObservableProperty]
     private string _title = "Downloads";
@@ -89,10 +97,6 @@ public partial class DownloadsViewModel(
     }
 
     /// <summary>
-    /// Called when the tab is activated/navigated to.
-    /// Refreshes installation status for all publisher cards.
-    /// </summary>
-    /// <summary>
     /// Handle activation of the Downloads tab: register message recipients if needed, lazily populate publisher cards, and refresh installation status for any expanded publisher cards.
     /// </summary>
     /// <returns>A <see cref="Task"/> that completes when the activation processing and any required status refreshes have finished.</returns>
@@ -113,18 +117,15 @@ public partial class DownloadsViewModel(
         if (!_isPublisherContentPopulated)
         {
             _isPublisherContentPopulated = true;
-            // Fire and forget with error handling
-            _ = Task.Run(async () =>
+
+            try
             {
-                try
-                {
-                    await PopulatePublisherCardsAsync();
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Failed to populate publisher cards");
-                }
-            });
+                await PopulatePublisherCardsAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to populate publisher cards");
+            }
         }
 
         try
@@ -160,6 +161,51 @@ public partial class DownloadsViewModel(
         };
     }
 
+    private static void UpdateCardMetadata(PublisherCardViewModel card, List<ContentSearchResult> releases)
+    {
+        var latest = releases
+            .OrderByDescending(r => r.LastUpdated ?? DateTime.MinValue)
+            .ThenByDescending(r => r.Version)
+            .FirstOrDefault();
+
+        if (latest != null)
+        {
+            card.LatestVersion = latest.Version;
+            card.DownloadSize = latest.DownloadSize;
+            card.ReleaseDate = latest.LastUpdated;
+        }
+    }
+
+    private static void UpdateMetadataWithCount(PublisherCardViewModel card, List<ContentSearchResult> releases, string countLabel)
+    {
+        var latest = releases.OrderByDescending(r => r.LastUpdated ?? DateTime.MinValue).FirstOrDefault();
+        if (latest != null)
+        {
+            card.LatestVersion = $"{releases.Count} {countLabel}";
+            card.DownloadSize = latest.DownloadSize;
+            card.ReleaseDate = latest.LastUpdated;
+            card.ReferenceCount = releases.Count;
+        }
+    }
+
+    private static void PopulateCardContentTypes(PublisherCardViewModel card, List<ContentSearchResult> releases)
+    {
+        var groupedContent = releases.GroupBy(r => r.ContentType).ToList();
+
+        foreach (var group in groupedContent)
+        {
+            var contentGroup = new ContentTypeGroup
+            {
+                Type = group.Key,
+                DisplayName = GetContentTypeDisplayName(group.Key),
+                Count = group.Count(),
+                Items = new ObservableCollection<ContentItemViewModel>(
+                    group.Select(item => new ContentItemViewModel(item))),
+            };
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => card.ContentTypes.Add(contentGroup));
+        }
+    }
+
     /// <summary>
     /// Create and initialize the collection of publisher card view models used by the Downloads tab.
     /// </summary>
@@ -170,7 +216,7 @@ public partial class DownloadsViewModel(
     /// </remarks>
     private void InitializePublisherCards()
     {
-        var publishers = new System.Collections.Generic.List<PublisherCardViewModel>();
+        var publishers = new List<PublisherCardViewModel>();
 
         // Create Generals Online publisher card (Feature 2)
         if (serviceProvider.GetService(typeof(PublisherCardViewModel)) is PublisherCardViewModel generalsOnlineCard)
@@ -267,11 +313,11 @@ public partial class DownloadsViewModel(
     /// </remarks>
     private async Task PopulateGeneralsOnlineCardAsync()
     {
+        var card = _generalsOnlineCard ??= PublisherCards.FirstOrDefault(c => c.PublisherId == GeneralsOnlineConstants.PublisherType);
+        if (card == null) return;
+
         try
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == GeneralsOnlineConstants.PublisherType);
-            if (card == null) return;
-
             if (serviceProvider.GetService(typeof(GeneralsOnlineDiscoverer)) is not GeneralsOnlineDiscoverer discoverer) return;
 
             var result = await discoverer.DiscoverAsync(new ContentSearchQuery());
@@ -279,36 +325,17 @@ public partial class DownloadsViewModel(
             {
                 var releases = result.Data.Items.ToList();
 
-                // Group by content type
-                var groupedContent = releases.GroupBy(r => r.ContentType).ToList();
-
-                foreach (var group in groupedContent)
-                {
-                    var contentGroup = new ContentTypeGroup
-                    {
-                        Type = group.Key,
-                        DisplayName = GetContentTypeDisplayName(group.Key),
-                        Count = group.Count(),
-                        Items = new ObservableCollection<ContentItemViewModel>(
-                            group.Select(item => new ContentItemViewModel(item))),
-                    };
-                    card.ContentTypes.Add(contentGroup);
-                }
-
-                // Set card metadata from first release
-                var latest = releases.FirstOrDefault();
-                if (latest != null)
-                {
-                    card.LatestVersion = latest.Version;
-                    card.DownloadSize = latest.DownloadSize;
-                    card.ReleaseDate = latest.LastUpdated;
-                }
+                PopulateCardContentTypes(card, releases);
+                UpdateCardMetadata(card, releases);
+            }
+            else if (result.Success)
+            {
+                card.LatestVersion = "Ready";
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to populate Generals Online card");
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == GeneralsOnlineConstants.PublisherType);
             if (card != null)
             {
                 card.HasError = true;
@@ -317,7 +344,6 @@ public partial class DownloadsViewModel(
         }
         finally
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == GeneralsOnlineConstants.PublisherType);
             if (card != null) card.IsLoading = false;
         }
     }
@@ -333,71 +359,41 @@ public partial class DownloadsViewModel(
     /// </remarks>
     private async Task PopulateSuperHackersCardAsync()
     {
+        var card = _superHackersCard ??= PublisherCards.FirstOrDefault(c => c.PublisherId == PublisherTypeConstants.TheSuperHackers);
+        if (card == null) return;
+
         try
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == PublisherTypeConstants.TheSuperHackers);
-            if (card == null) return;
-
-            // Query for all configured GitHub releases
-            var query = new ContentSearchQuery();
             if (serviceProvider.GetService(typeof(GitHubReleasesDiscoverer)) is not GitHubReleasesDiscoverer gitHubDiscoverer)
             {
                 logger.LogWarning("GitHubReleasesDiscoverer not available for SuperHackers card");
                 return;
             }
 
-            // Query for all configured GitHub releases
-            var searchQuery = new ContentSearchQuery();
-
-            var result = await gitHubDiscoverer.DiscoverAsync(searchQuery);
+            var result = await gitHubDiscoverer.DiscoverAsync(new ContentSearchQuery());
             if (result.Success && result.Data?.Items?.Any() == true)
             {
-                // Filter for SuperHackers content if the discoverer returns more (though config should limit it)
-                // And patch the ProviderName to ensure we use the SuperHackersProvider
                 var releases = result.Data.Items.Select(r =>
                 {
-                    r.ProviderName = GenHub.Core.Constants.PublisherTypeConstants.TheSuperHackers;
+                    r.ProviderName = PublisherTypeConstants.TheSuperHackers;
                     return r;
                 }).ToList();
 
-                // Group by content type (Patch, GameClient, Tools)
-                var groupedContent = releases.GroupBy(r => r.ContentType).ToList();
-
-                foreach (var group in groupedContent)
-                {
-                    var contentGroup = new ContentTypeGroup
-                    {
-                        Type = group.Key,
-                        DisplayName = GetContentTypeDisplayName(group.Key),
-                        Count = group.Count(),
-                        Items = new ObservableCollection<ContentItemViewModel>(
-                            group.Select(item => new ContentItemViewModel(item))),
-                    };
-                    card.ContentTypes.Add(contentGroup);
-                }
-
-                // Set card metadata from latest release
-                var latest = releases.OrderByDescending(r => r.LastUpdated).FirstOrDefault();
-                if (latest != null)
-                {
-                    card.LatestVersion = latest.Version;
-                    card.DownloadSize = latest.DownloadSize;
-                    card.ReleaseDate = latest.LastUpdated;
-                }
+                PopulateCardContentTypes(card, releases);
+                UpdateCardMetadata(card, releases);
 
                 logger.LogInformation("Populated SuperHackers card with {Count} releases", releases.Count);
             }
-            else
+            else if (result.Success)
             {
                 logger.LogWarning("No releases found for SuperHackers");
-                card.LatestVersion = "No releases";
+                card.LatestVersion = "Ready";
                 card.ReleaseNotes = "Check GitHub for updates";
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to populate SuperHackers card");
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == PublisherTypeConstants.TheSuperHackers);
             if (card != null)
             {
                 card.HasError = true;
@@ -406,7 +402,6 @@ public partial class DownloadsViewModel(
         }
         finally
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == PublisherTypeConstants.TheSuperHackers);
             if (card != null) card.IsLoading = false;
         }
     }
@@ -422,18 +417,12 @@ public partial class DownloadsViewModel(
     /// <returns>Completion of the population operation.</returns>
     private async Task PopulateCommunityOutpostCardAsync()
     {
+        var card = _communityOutpostCard ??= PublisherCards.FirstOrDefault(c => c.PublisherId == CommunityOutpostConstants.PublisherType);
+        if (card == null) return;
+
         try
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == CommunityOutpostConstants.PublisherType);
-            if (card == null)
-            {
-                return;
-            }
-
-            if (serviceProvider.GetService(typeof(GenHub.Features.Content.Services.CommunityOutpost.CommunityOutpostDiscoverer)) is not GenHub.Features.Content.Services.CommunityOutpost.CommunityOutpostDiscoverer discoverer)
-            {
-                return;
-            }
+            if (serviceProvider.GetService(typeof(CommunityOutpostDiscoverer)) is not CommunityOutpostDiscoverer discoverer) return;
 
             var result = await discoverer.DiscoverAsync(new ContentSearchQuery());
 
@@ -441,36 +430,17 @@ public partial class DownloadsViewModel(
             {
                 var releases = result.Data.Items.ToList();
 
-                // Group by content type
-                var groupedContent = releases.GroupBy(r => r.ContentType).ToList();
-
-                foreach (var group in groupedContent)
-                {
-                    var contentGroup = new ContentTypeGroup
-                    {
-                        Type = group.Key,
-                        DisplayName = GetContentTypeDisplayName(group.Key),
-                        Count = group.Count(),
-                        Items = new ObservableCollection<ContentItemViewModel>(
-                            group.Select(item => new ContentItemViewModel(item))),
-                    };
-                    card.ContentTypes.Add(contentGroup);
-                }
-
-                // Set card metadata from first release
-                var latest = releases.FirstOrDefault();
-                if (latest != null)
-                {
-                    card.LatestVersion = latest.Version;
-                    card.DownloadSize = latest.DownloadSize;
-                    card.ReleaseDate = latest.LastUpdated;
-                }
+                PopulateCardContentTypes(card, releases);
+                UpdateCardMetadata(card, releases);
+            }
+            else if (result.Success)
+            {
+                card.LatestVersion = "Ready";
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to populate Community Outpost card");
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == CommunityOutpostConstants.PublisherType);
             if (card != null)
             {
                 card.HasError = true;
@@ -479,7 +449,6 @@ public partial class DownloadsViewModel(
         }
         finally
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == CommunityOutpostConstants.PublisherType);
             if (card != null) card.IsLoading = false;
         }
     }
@@ -490,7 +459,7 @@ public partial class DownloadsViewModel(
     /// <returns>A task that completes when the GitHub card has been populated and its loading state updated.</returns>
     private async Task PopulateGithubCardAsync()
     {
-        var card = PublisherCards.FirstOrDefault(c => c.PublisherId == GitHubTopicsConstants.PublisherType);
+        var card = _githubCard ??= PublisherCards.FirstOrDefault(c => c.PublisherId == GitHubTopicsConstants.PublisherType);
         if (card == null) return;
 
         try
@@ -500,25 +469,8 @@ public partial class DownloadsViewModel(
             {
                 var repositories = result.Data.Items.ToList();
 
-                // Group by content type
-                var groupedContent = repositories.GroupBy(r => r.ContentType).ToList();
+                PopulateCardContentTypes(card, repositories);
 
-                foreach (var group in groupedContent)
-                {
-                    var contentGroup = new ContentTypeGroup
-                    {
-                        Type = group.Key,
-                        DisplayName = GetContentTypeDisplayName(group.Key),
-                        Count = group.Count(),
-                        Items = new ObservableCollection<ContentItemViewModel>(
-                            group.Select(item => new ContentItemViewModel(item))),
-                    };
-                    card.ContentTypes.Add(contentGroup);
-                }
-
-                // Set card metadata - this is an aggregate card showing multiple repos
-                // LatestVersion here represents the count of discovered repositories
-                // TODO: Consider adding a separate Summary property for aggregate cards
                 if (repositories.Count > 0)
                 {
                     card.LatestVersion = $"{repositories.Count} repos";
@@ -526,24 +478,24 @@ public partial class DownloadsViewModel(
 
                 logger.LogInformation("Populated GitHub card with {Count} repositories", repositories.Count);
             }
-            else
+            else if (result.Success)
             {
+                card.LatestVersion = "Ready";
                 logger.LogInformation("No GitHub repositories found with GenHub topics");
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to populate GitHub card");
-            card.HasError = true;
-            card.ErrorMessage = "Failed to discover GitHub repositories";
-
-            notificationService.ShowError(
-                "GitHub Discovery Failed",
-                $"Failed to discover GitHub repositories: {ex.Message}");
+            if (card != null)
+            {
+                card.HasError = true;
+                card.ErrorMessage = "Failed to discover GitHub repositories";
+            }
         }
         finally
         {
-            card.IsLoading = false;
+            if (card != null) card.IsLoading = false;
         }
     }
 
@@ -558,12 +510,12 @@ public partial class DownloadsViewModel(
     /// </remarks>
     private async Task PopulateCNCLabsCardAsync()
     {
+        var card = _cncLabsCard ??= PublisherCards.FirstOrDefault(c => c.PublisherId == CNCLabsConstants.PublisherType);
+        if (card == null) return;
+
         try
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == CNCLabsConstants.PublisherType);
-            if (card == null) return;
-
-            if (serviceProvider.GetService(typeof(GenHub.Features.Content.Services.ContentDiscoverers.CNCLabsMapDiscoverer)) is not GenHub.Features.Content.Services.ContentDiscoverers.CNCLabsMapDiscoverer discoverer)
+            if (serviceProvider.GetService(typeof(CNCLabsMapDiscoverer)) is not CNCLabsMapDiscoverer discoverer)
             {
                 logger.LogWarning("CNCLabsMapDiscoverer not available for CNCLabs card");
                 card.LatestVersion = "Unavailable";
@@ -575,24 +527,9 @@ public partial class DownloadsViewModel(
             {
                 var releases = result.Data.Items.ToList();
 
-                // Group by content type
-                var groupedContent = releases.GroupBy(r => r.ContentType).ToList();
+                PopulateCardContentTypes(card, releases);
 
-                foreach (var group in groupedContent)
-                {
-                    var contentGroup = new ContentTypeGroup
-                    {
-                        Type = group.Key,
-                        DisplayName = GetContentTypeDisplayName(group.Key),
-                        Count = group.Count(),
-                        Items = new ObservableCollection<ContentItemViewModel>(
-                            group.Select(item => new ContentItemViewModel(item))),
-                    };
-                    card.ContentTypes.Add(contentGroup);
-                }
-
-                // Set card metadata from first release
-                var latest = releases.FirstOrDefault();
+                var latest = releases.OrderByDescending(r => r.LastUpdated ?? DateTime.MinValue).FirstOrDefault();
                 if (latest != null)
                 {
                     card.LatestVersion = $"{releases.Count} maps";
@@ -600,7 +537,7 @@ public partial class DownloadsViewModel(
                     card.ReleaseDate = latest.LastUpdated;
                 }
             }
-            else
+            else if (result.Success)
             {
                 card.LatestVersion = "Ready";
             }
@@ -608,7 +545,6 @@ public partial class DownloadsViewModel(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to populate CNC Labs card");
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == CNCLabsConstants.PublisherType);
             if (card != null)
             {
                 card.HasError = true;
@@ -617,7 +553,6 @@ public partial class DownloadsViewModel(
         }
         finally
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == CNCLabsConstants.PublisherType);
             if (card != null) card.IsLoading = false;
         }
     }
@@ -630,12 +565,12 @@ public partial class DownloadsViewModel(
     /// </remarks>
     private async Task PopulateModDBCardAsync()
     {
+        var card = _modDBCard ??= PublisherCards.FirstOrDefault(c => c.PublisherId == ModDBConstants.PublisherType);
+        if (card == null) return;
+
         try
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == ModDBConstants.PublisherType);
-            if (card == null) return;
-
-            if (serviceProvider.GetService(typeof(GenHub.Features.Content.Services.ContentDiscoverers.ModDBDiscoverer)) is not GenHub.Features.Content.Services.ContentDiscoverers.ModDBDiscoverer discoverer)
+            if (serviceProvider.GetService(typeof(ModDBDiscoverer)) is not ModDBDiscoverer discoverer)
             {
                 logger.LogWarning("ModDBDiscoverer not available for ModDB card");
                 card.LatestVersion = "Unavailable";
@@ -647,32 +582,10 @@ public partial class DownloadsViewModel(
             {
                 var releases = result.Data.Items.ToList();
 
-                // Group by content type
-                var groupedContent = releases.GroupBy(r => r.ContentType).ToList();
-
-                foreach (var group in groupedContent)
-                {
-                    var contentGroup = new ContentTypeGroup
-                    {
-                        Type = group.Key,
-                        DisplayName = GetContentTypeDisplayName(group.Key),
-                        Count = group.Count(),
-                        Items = new ObservableCollection<ContentItemViewModel>(
-                            group.Select(item => new ContentItemViewModel(item))),
-                    };
-                    card.ContentTypes.Add(contentGroup);
-                }
-
-                // Set card metadata from first release
-                var latest = releases.OrderByDescending(r => r.LastUpdated).FirstOrDefault();
-                if (latest != null)
-                {
-                    card.LatestVersion = $"{releases.Count} items";
-                    card.DownloadSize = latest.DownloadSize;
-                    card.ReleaseDate = latest.LastUpdated;
-                }
+                PopulateCardContentTypes(card, releases);
+                UpdateMetadataWithCount(card, releases, "items");
             }
-            else
+            else if (result.Success)
             {
                 card.LatestVersion = "Ready";
             }
@@ -680,7 +593,6 @@ public partial class DownloadsViewModel(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to populate ModDB card");
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == ModDBConstants.PublisherType);
             if (card != null)
             {
                 card.HasError = true;
@@ -689,7 +601,6 @@ public partial class DownloadsViewModel(
         }
         finally
         {
-            var card = PublisherCards.FirstOrDefault(c => c.PublisherId == ModDBConstants.PublisherType);
             if (card != null) card.IsLoading = false;
         }
     }
@@ -713,6 +624,14 @@ public partial class DownloadsViewModel(
                     GeneralsOnlineVersion = $"v{firstResult.Version}";
                     logger.LogInformation("Fetched GeneralsOnline version: {Version}", firstResult.Version);
                 }
+                else
+                {
+                    GeneralsOnlineVersion = "Unavailable";
+                }
+            }
+            else
+            {
+                GeneralsOnlineVersion = "Unavailable";
             }
         }
         catch (Exception ex)
@@ -738,15 +657,25 @@ public partial class DownloadsViewModel(
                 var result = await discoverer.DiscoverAsync(new ContentSearchQuery());
                 if (result.Success && result.Data?.Items?.Any() == true)
                 {
-                    // Filter for SuperHackers content if needed, similar to PopulateSuperHackersCardAsync
-                    // For now, assuming the discoverer returns relevant releases based on config
-                    var latest = result.Data.Items.OrderByDescending(r => r.LastUpdated).FirstOrDefault();
+                    var latest = result.Data.Items.OrderByDescending(r => r.LastUpdated ?? DateTime.MinValue).FirstOrDefault();
                     if (latest != null)
                     {
                         WeeklyReleaseVersion = latest.Version;
                         logger.LogInformation("Fetched Weekly Release version: {Version}", latest.Version);
                     }
+                    else
+                    {
+                        WeeklyReleaseVersion = "Unavailable";
+                    }
                 }
+                else
+                {
+                    WeeklyReleaseVersion = "Unavailable";
+                }
+            }
+            else
+            {
+                WeeklyReleaseVersion = "Unavailable";
             }
         }
         catch (Exception ex)
@@ -775,6 +704,14 @@ public partial class DownloadsViewModel(
                     var firstResult = result.Data.Items.First();
                     CommunityPatchVersion = firstResult.Version;
                 }
+                else
+                {
+                    CommunityPatchVersion = "Unavailable";
+                }
+            }
+            else
+            {
+                CommunityPatchVersion = "Unavailable";
             }
         }
         catch (Exception ex)
@@ -815,7 +752,6 @@ public partial class DownloadsViewModel(
         }
         finally
         {
-            await Task.Delay(2000); // Show status for a bit
             IsInstallingGeneralsOnline = false;
             InstallationStatus = string.Empty;
         }
@@ -884,9 +820,6 @@ public partial class DownloadsViewModel(
     private bool _isBrowserVisible;
 
     /// <summary>
-    /// Receives message to open publisher details/browser.
-    /// </summary>
-    /// <summary>
     /// Opens the publisher details browser for the publisher identified by the message.
     /// </summary>
     /// <remarks>
@@ -907,12 +840,17 @@ public partial class DownloadsViewModel(
                 IsBrowserVisible = true;
                 Title = "Browser"; // Temporarily change title or keep context?
             }
+            else
+            {
+                logger.LogWarning("Publisher {PublisherId} not found in browser", message.Value);
+            }
+        }
+        else
+        {
+            logger.LogError("Could not resolve DownloadsBrowserViewModel to open publisher {PublisherId}", message.Value);
         }
     }
 
-    /// <summary>
-    /// Receives message to close publisher details/browser.
-    /// </summary>
     /// <summary>
     /// Closes the publisher details view and navigates back to the Downloads dashboard.
     /// </summary>

@@ -18,13 +18,18 @@ namespace GenHub.Features.Content.Services.Tools;
 public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightService, IAsyncDisposable
 {
     private static readonly SemaphoreSlim _browserLock = new(1, 1);
-    private static IPlaywright? _playwright;
-    private static IBrowser? _browser;
+    private static readonly TimeSpan DefaultNavigationTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultDynamicContentDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan AutoDownloadCheckDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MinimumDownloadTimeout = TimeSpan.FromSeconds(60);
+
+    private static volatile IPlaywright? _playwright;
+    private static volatile IBrowser? _browser;
 
     /// <inheritdoc />
     public async Task<IPage> CreatePageAsync(BrowserNewContextOptions? options = null, CancellationToken cancellationToken = default)
     {
-        await EnsurePlaywrightInitializedAsync(cancellationToken);
+        await EnsurePlaywrightInitializedAsync(logger, cancellationToken);
 
         if (_browser == null)
         {
@@ -44,6 +49,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
     /// Retrieves the rendered HTML content of the page at the specified URL.
     /// </summary>
     /// <param name="url">The absolute URL to navigate to.</param>
+    /// <param name="cancellationToken">A token to observe for cancellation requests.</param>
     /// <returns>The page's HTML markup as a string.</returns>
     public async Task<string> FetchHtmlAsync(string url, CancellationToken cancellationToken = default)
     {
@@ -56,12 +62,12 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
             {
                 await page.GotoAsync(url, new PageGotoOptions
                 {
-                    Timeout = 30000,
+                    Timeout = (float)DefaultNavigationTimeout.TotalMilliseconds,
                     WaitUntil = WaitUntilState.DOMContentLoaded,
                 });
 
                 // Wait a bit for dynamic content to load
-                await Task.Delay(500, cancellationToken);
+                await Task.Delay(DefaultDynamicContentDelay, cancellationToken);
 
                 return await page.ContentAsync();
             }
@@ -82,7 +88,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
     public async Task<IDocument> FetchAndParseAsync(string url, CancellationToken cancellationToken = default)
     {
         var html = await FetchHtmlAsync(url, cancellationToken);
-        var browsingContext = BrowsingContext.New(Configuration.Default);
+        using var browsingContext = BrowsingContext.New(Configuration.Default);
         return await browsingContext.OpenAsync(req => req.Content(html), cancellationToken);
     }
 
@@ -100,7 +106,6 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
             _playwright.Dispose();
             _playwright = null;
         }
-
 
         GC.SuppressFinalize(this);
     }
@@ -135,6 +140,12 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
 
             page.Download += DownloadHandler;
 
+            // Also capture downloads from new pages (popups)
+            context.Page += (_, newPage) =>
+            {
+                newPage.Download += DownloadHandler;
+            };
+
             try
             {
                 // Trigger the download by navigating to the URL
@@ -146,12 +157,12 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
 
                 // Race the download TCS against a set delay to check if it auto-started
                 // If it doesn't start quickly, we try to click a fallback link
-                var waitTask = Task.Delay(5000, cancellationToken);
+                var waitTask = Task.Delay(AutoDownloadCheckDelay, cancellationToken);
                 var completedTask = await Task.WhenAny(downloadTcs.Task, waitTask);
 
                 if (completedTask != downloadTcs.Task)
                 {
-                    logger.LogInformation("Download did not start automatically within 5s. Attempting to find fallback link...");
+                    logger.LogInformation("Download did not start automatically within {Seconds}s. Attempting to find fallback link...", AutoDownloadCheckDelay.TotalSeconds);
 
                     // Try to find a download link
                     var fallbackLink = await page.QuerySelectorAsync("a#download, a.download, a:has-text('Download'), a:has-text('download'), a:has-text('mirror')");
@@ -167,7 +178,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
                         }
                         catch (Exception ex)
                         {
-                            logger.LogWarning(ex, "Failed to click fallback link.");
+                            logger.LogWarning(ex, "Failed to click fallback link. Continuing to wait for download event...");
                         }
                     }
                     else
@@ -177,7 +188,7 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
                 }
 
                 // Wait for the download to start with a generous timeout (60s or config timeout if larger)
-                var waitTimeout = TimeSpan.FromMilliseconds(Math.Max(60000, configuration.Timeout.TotalMilliseconds));
+                var waitTimeout = TimeSpan.FromMilliseconds(Math.Max(MinimumDownloadTimeout.TotalMilliseconds, configuration.Timeout.TotalMilliseconds));
 
                 // We use WaitAsync (available in .NET 6+) or a custom timeout logic
                 var download = await downloadTcs.Task.WaitAsync(waitTimeout, cancellationToken);
@@ -187,11 +198,27 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
                     return DownloadResult.CreateFailure("Download failed to initialize (null download object).");
                 }
 
+                // Check for download failure state (Major issue)
+                var failure = await download.FailureAsync();
+                if (!string.IsNullOrEmpty(failure))
+                {
+                    logger.LogError("Playwright download failed with state: {Failure}", failure);
+                    return DownloadResult.CreateFailure($"Download failed: {failure}");
+                }
+
                 var path = await download.PathAsync();
 
-                if (File.Exists(configuration.DestinationPath) && configuration.OverwriteExisting)
+                if (File.Exists(configuration.DestinationPath))
                 {
-                    File.Delete(configuration.DestinationPath);
+                    if (configuration.OverwriteExisting)
+                    {
+                        File.Delete(configuration.DestinationPath);
+                    }
+                    else
+                    {
+                        logger.LogWarning("Destination file {Path} already exists and OverwriteExisting is false. Failing download.", configuration.DestinationPath);
+                        return DownloadResult.CreateFailure($"File already exists: {configuration.DestinationPath}");
+                    }
                 }
 
                 // Create directory if it doesn't exist
@@ -230,14 +257,12 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
     }
 
     /// <summary>
-    /// Ensures Playwright is initialized with a browser instance.
-    /// <summary>
     /// Ensures a shared Playwright instance and Chromium browser are initialized for use.
     /// </summary>
     /// <remarks>
     /// Acquires an internal semaphore to initialize the singleton Playwright and browser instances in a thread-safe manner; subsequent calls return immediately if initialization is already complete.
     /// </remarks>
-    private static async Task EnsurePlaywrightInitializedAsync(CancellationToken cancellationToken)
+    private static async Task EnsurePlaywrightInitializedAsync(ILogger logger, CancellationToken cancellationToken)
     {
         if (_browser != null) return;
 
@@ -247,11 +272,21 @@ public class PlaywrightService(ILogger<PlaywrightService> logger) : IPlaywrightS
             if (_browser != null) return;
 
             _playwright = await Playwright.CreateAsync();
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            try
             {
-                Headless = true,
-                Args = ["--disable-blink-features=AutomationControlled"],
-            });
+                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Headless = true,
+                    Args = ["--disable-blink-features=AutomationControlled"],
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to launch browser, cleaning up Playwright instance");
+                _playwright.Dispose();
+                _playwright = null;
+                throw;
+            }
         }
         finally
         {

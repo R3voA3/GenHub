@@ -31,26 +31,34 @@ public class CNCLabsMapResolver(
     ILogger<CNCLabsMapResolver> logger) : IContentResolver
 {
     /// <summary>
+    /// Extracts a metadata value from the document by finding a label and reading the next text sibling.
+    /// </summary>
+    /// <param name="document">The HTML document.</param>
+    /// <param name="label">The label text to search for (e.g., "File Size:").</param>
+    /// <returns>The extracted value or null if not found.</returns>
+    private static string? ExtractMetadataValue(IDocument document, string label)
+    {
+        var strongEl = document.QuerySelectorAll("strong")
+            .FirstOrDefault(s => s.TextContent?.Trim().EndsWith(label, StringComparison.OrdinalIgnoreCase) == true);
+
+        return CNCLabsHelper.GetNextNonEmptyTextSibling(strongEl);
+    }
+
+    /// <summary>
     /// Gets the unique resolver ID for CNC Labs Map.
     /// </summary>
     public string ResolverId => CNCLabsConstants.ResolverId;
 
     /// <summary>
-    /// Resolves the details of a discovered CNC Labs map item.
-    /// </summary>
-    /// <param name="discoveredItem">The discovered content item to resolve.</param>
-    /// <param name="cancellationToken">A cancellation token.</param>
-    /// <summary>
     /// Resolve a detailed ContentManifest for a discovered CNC Labs map by fetching and parsing its detail page.
     /// </summary>
     /// <param name="discoveredItem">The discovered content item whose SourceUrl points to the map detail page. Its ResolverMetadata may contain a map ID under CNCLabsConstants.MapIdMetadataKey which is used as a fallback for the download URL.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>An <see cref="OperationResult{ContentManifest}"/> containing the manifest on success, or a failure result with an explanatory message when resolution fails (e.g., missing source URL, no download URL found, invalid map ID, HTTP errors, or other errors).</returns>
     public async Task<OperationResult<ContentManifest>> ResolveAsync(
         ContentSearchResult discoveredItem,
         CancellationToken cancellationToken = default)
     {
-
-
         if (discoveredItem?.SourceUrl == null)
         {
             return OperationResult<ContentManifest>.CreateFailure("Invalid discovered item or source URL");
@@ -69,7 +77,7 @@ public class CNCLabsMapResolver(
             // Extract map ID from metadata early for fallback usage
             int? mapId = null;
             if (discoveredItem.ResolverMetadata.TryGetValue(CNCLabsConstants.MapIdMetadataKey, out var mapIdStr)
-                && int.TryParse(mapIdStr, out var id))
+                && int.TryParse(mapIdStr, out var id) && id > 0)
             {
                 mapId = id;
             }
@@ -98,12 +106,6 @@ public class CNCLabsMapResolver(
                 return OperationResult<ContentManifest>.CreateFailure("No download URL found in map details");
             }
 
-            if (!mapId.HasValue)
-            {
-                 logger.LogWarning("Invalid or missing map ID in resolver metadata for {Url}", discoveredItem.SourceUrl);
-                 return OperationResult<ContentManifest>.CreateFailure("Invalid map ID in resolver metadata");
-            }
-
             // Use factory to create manifest
             var manifest = await manifestFactory.CreateManifestAsync(mapDetails);
 
@@ -127,20 +129,6 @@ public class CNCLabsMapResolver(
     }
 
     /// <summary>
-    /// Extracts a metadata value from the document by finding a label and reading the next text sibling.
-    /// </summary>
-    /// <param name="document">The HTML document.</param>
-    /// <param name="label">The label text to search for (e.g., "File Size:").</param>
-    /// <returns>The extracted value or null if not found.</returns>
-    private static string? ExtractMetadataValue(IDocument document, string label)
-    {
-        var strongEl = document.QuerySelectorAll("strong")
-            .FirstOrDefault(s => s.TextContent?.Trim().EndsWith(label, StringComparison.OrdinalIgnoreCase) == true);
-
-        return CNCLabsHelper.GetNextNonEmptyTextSibling(strongEl);
-    }
-
-    /// <summary>
     /// Parses the HTML detail page for a CNC Labs map and extracts all relevant details.
     /// </summary>
     /// <param name="html">The HTML content of the map detail page.</param>
@@ -148,8 +136,8 @@ public class CNCLabsMapResolver(
     /// <returns>A <see cref="ParsedContentDetails"/> record containing parsed details.</returns>
     private async Task<ParsedContentDetails> ParseMapDetailPageAsync(string html, CancellationToken cancellationToken)
     {
-        var context = BrowsingContext.New(Configuration.Default);
-        var document = await context.OpenAsync(req => req.Content(html), cancellationToken);
+        using var context = BrowsingContext.New(Configuration.Default);
+        using var document = await context.OpenAsync(req => req.Content(html), cancellationToken);
 
         // 1. Name (from breadcrumb or .DisplayName selector)
         var name = document.QuerySelector(CNCLabsConstants.NameSelector)?.TextContent?.Trim()
@@ -231,7 +219,7 @@ public class CNCLabsMapResolver(
         var previewImage = document.QuerySelector("img.PreviewImage")?.GetAttribute("src") ?? string.Empty;
         if (!string.IsNullOrEmpty(previewImage) && !previewImage.StartsWith("http", StringComparison.OrdinalIgnoreCase))
         {
-            previewImage = $"https://www.cnclabs.com{previewImage}";
+            previewImage = $"{CNCLabsConstants.PublisherWebsite.TrimEnd('/')}/{previewImage.TrimStart('/')}";
         }
 
         var screenshots = document.QuerySelectorAll("img.Screenshot")
@@ -239,7 +227,7 @@ public class CNCLabsMapResolver(
             .Where(src => !string.IsNullOrEmpty(src))
             .Select(src => src!.StartsWith("http", StringComparison.OrdinalIgnoreCase)
                 ? src
-                : $"https://www.cnclabs.com{src}")
+                : $"{CNCLabsConstants.PublisherWebsite.TrimEnd('/')}/{src!.TrimStart('/')}")
             .ToList();
 
         return new ParsedContentDetails(
@@ -254,7 +242,7 @@ public class CNCLabsMapResolver(
             DownloadUrl: downloadUrl,
             TargetGame: gameType,
             ContentType: contentType,
-            FileType: Path.GetExtension(downloadUrl),
+            FileType: Path.GetExtension(downloadUrl) ?? string.Empty,
             Rating: rating);
     }
 }

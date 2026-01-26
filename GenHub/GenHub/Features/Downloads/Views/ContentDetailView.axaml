@@ -9,7 +9,7 @@
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
              x:Class="GenHub.Features.Downloads.Views.ContentDetailView"
              x:DataType="vm:ContentDetailViewModel"
-             Background="#1A1A1A">
+             Background="{DynamicResource WindowBackground}">
 
     <UserControl.Resources>
         <converters:FileSizeConverter x:Key="FileSizeConverter" />
@@ -135,39 +135,49 @@
                         </ScrollViewer>
                     </TabItem>
 
-                    <!-- Files Tab - Only show if more than 1 file -->
+                    <!-- Files Tab - Shows files/variants -->
                     <TabItem Header="Files" IsVisible="{Binding ShowFilesTab}">
                         <ScrollViewer>
-                            <ItemsControl ItemsSource="{Binding Files}" Margin="0,24,0,0">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="parsers:File">
-                                        <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <StackPanel Grid.Column="0" Spacing="4">
-                                                    <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="White" />
-                                                    <StackPanel Orientation="Horizontal" Spacing="12">
-                                                        <TextBlock Text="{Binding SizeDisplay}" Foreground="#AAAAAA" FontSize="13"
-                                                                   IsVisible="{Binding SizeDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                                        <TextBlock Text="{Binding UploadDate, StringFormat='{}{0:MMM dd, yyyy}'}"
-                                                                   Foreground="#AAAAAA" FontSize="13"
-                                                                   IsVisible="{Binding UploadDate, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <StackPanel Margin="0,24,0,0">
+                                <!-- Info text for GitHub variants -->
+                                <TextBlock Text="Available Files" FontWeight="SemiBold" FontSize="16" Foreground="White" Margin="0,0,0,8"
+                                           IsVisible="{Binding HasFiles}"/>
+                                <TextBlock Text="Select a file to download based on your preference" FontSize="13" Foreground="#888888" Margin="0,0,0,16"
+                                           IsVisible="{Binding HasFiles}"/>
+
+                                <ItemsControl ItemsSource="{Binding Files}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="parsers:File">
+                                            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" Foreground="White" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                                            <TextBlock Text="{Binding SizeDisplay}" Foreground="#AAAAAA" FontSize="13"
+                                                                       IsVisible="{Binding SizeDisplay, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                            <TextBlock Text="{Binding UploadDate, StringFormat='{}{0:MMM dd, yyyy}'}"
+                                                                       Foreground="#AAAAAA" FontSize="13"
+                                                                       IsVisible="{Binding UploadDate, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding OriginalFileName}"
+                                                                   Foreground="#666666" FontSize="11"
+                                                                   IsVisible="{Binding OriginalFileName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                        <TextBlock Text="{Binding Uploader, StringFormat='By: {0}'}"
+                                                                   Foreground="#888888" FontSize="12"
+                                                                   IsVisible="{Binding Uploader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding Uploader, StringFormat='By: {0}'}"
-                                                               Foreground="#888888" FontSize="12"
-                                                               IsVisible="{Binding Uploader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                                </StackPanel>
-                                                <Button Grid.Column="1" Content="Download"
-                                                        Command="{Binding $parent[UserControl].((vm:ContentDetailViewModel)DataContext).DownloadFileCommand}"
-                                                        CommandParameter="{Binding}"
-                                                        Background="{DynamicResource ButtonBackground}" Foreground="{DynamicResource PrimaryButtonForeground}"
-                                                        CornerRadius="6" Padding="16,8"
-                                                        VerticalAlignment="Center"
-                                                        IsVisible="False" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                                    <Button Grid.Column="1" Content="Download"
+                                                            Command="{Binding $parent[UserControl].((vm:ContentDetailViewModel)DataContext).DownloadFileCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            Background="{DynamicResource ButtonBackground}" Foreground="{DynamicResource PrimaryButtonForeground}"
+                                                            CornerRadius="6" Padding="16,8"
+                                                            VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </ScrollViewer>
                     </TabItem>
 
@@ -181,7 +191,7 @@
                                 <ItemsControl ItemsSource="{Binding Releases}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="#333333" CornerRadius="8" Padding="16" Margin="0,0,0,8">
+                                            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,8">
                                                 <Grid ColumnDefinitions="*,Auto">
                                                     <StackPanel Grid.Column="0" Spacing="4">
                                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White" />
@@ -289,9 +299,9 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="parsers:Video">
-                                                <Border Background="#252525" CornerRadius="8" Padding="12" Margin="0,0,12,12" Width="300">
+                                                <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="12" Margin="0,0,12,12" Width="300">
                                                     <StackPanel Spacing="8">
-                                                        <Border CornerRadius="6" Height="170" Background="#333333" ClipToBounds="True">
+                                                        <Border CornerRadius="6" Height="170" Background="{DynamicResource WindowBackground}" ClipToBounds="True">
                                                             <Image Source="{Binding ThumbnailUrl, Converter={StaticResource StringToImageConverter}}"
                                                                    Stretch="UniformToFill"
                                                                    IsVisible="{Binding ThumbnailUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
@@ -316,9 +326,9 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="parsers:Image">
-                                                <Border Background="#252525" CornerRadius="8" Padding="8" Margin="0,0,8,8" Width="200">
+                                                <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="8" Margin="0,0,8,8" Width="200">
                                                     <StackPanel Spacing="8">
-                                                        <Border CornerRadius="6" Height="120" Background="#333333" ClipToBounds="True">
+                                                        <Border CornerRadius="6" Height="120" Background="{DynamicResource WindowBackground}" ClipToBounds="True">
                                                             <Image Source="{Binding ThumbnailUrl, Converter={StaticResource StringToImageConverter}}"
                                                                    Stretch="UniformToFill"
                                                                    IsVisible="{Binding ThumbnailUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
@@ -339,12 +349,12 @@
                         <ScrollViewer>
                             <StackPanel Spacing="24" Margin="0,24,0,0">
                                 <!-- Articles -->
-                                <StackPanel Spacing="12" IsVisible="{Binding !!Articles.Count}">
+                                <StackPanel Spacing="12" IsVisible="{Binding HasArticles}">
                                     <TextBlock Text="Articles" FontSize="18" FontWeight="SemiBold" Foreground="White" />
                                     <ItemsControl ItemsSource="{Binding Articles}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="parsers:Article">
-                                                <Border Background="#252525" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+                                                <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
                                                     <StackPanel Spacing="8">
                                                         <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Foreground="White" />
                                                         <StackPanel Orientation="Horizontal" Spacing="12">
@@ -365,7 +375,7 @@
                                     <ItemsControl ItemsSource="{Binding Reviews}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="parsers:Review">
-                                                <Border Background="#252525" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+                                                <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
                                                     <StackPanel Spacing="8">
                                                         <Grid ColumnDefinitions="Auto,*,Auto">
                                                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
@@ -389,7 +399,7 @@
                                     <ItemsControl ItemsSource="{Binding Comments}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="parsers:Comment">
-                                                <Border Background="#252525" CornerRadius="8" Padding="16" Margin="0,0,0,8">
+                                                <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,8">
                                                     <StackPanel Spacing="6">
                                                         <Grid ColumnDefinitions="Auto,*,Auto">
                                                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
@@ -497,7 +507,7 @@
                 </Border>
 
                 <!-- Tags -->
-                <Border Background="{DynamicResource CardBackground}" CornerRadius="12" Padding="20" IsVisible="{Binding !!Tags.Count}">
+                <Border Background="{DynamicResource CardBackground}" CornerRadius="12" Padding="20" IsVisible="{Binding HasTags}">
                     <StackPanel Spacing="12">
                         <TextBlock Text="Tags" FontWeight="SemiBold" Foreground="White" />
                         <ItemsControl ItemsSource="{Binding Tags}">
