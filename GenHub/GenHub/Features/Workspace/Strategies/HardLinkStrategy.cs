@@ -44,8 +44,8 @@ public sealed class HardLinkStrategy(IFileOperationsService fileOperations, ILog
     /// <inheritdoc/>
     public override long EstimateDiskUsage(WorkspaceConfiguration configuration)
     {
-        // Deduplicate files for accurate estimation
-        var allFiles = configuration.GetAllUniqueFiles().ToList();
+        // Deduplicate files for accurate estimation - only include workspace-targeted files
+        var allFiles = configuration.GetWorkspaceUniqueFiles().ToList();
 
         // Check if source and destination are on the same volume
         var sourceRoot = Path.GetPathRoot(configuration.BaseInstallationPath);
@@ -94,8 +94,10 @@ public sealed class HardLinkStrategy(IFileOperationsService fileOperations, ILog
 
             // Deduplicate files by RelativePath with priority ordering (GameClient > GameInstallation)
             // so lower-priority sources cannot overwrite higher-priority files like modded clients.
+            // ONLY include files where InstallTarget is Workspace.
             var prioritizedFiles = configuration.Manifests
                 .SelectMany((manifest, index) => (manifest.Files ?? Enumerable.Empty<ManifestFile>())
+                    .Where(f => f.InstallTarget == ContentInstallTarget.Workspace)
                     .Select(file => new { File = file, Manifest = manifest, ManifestIndex = index }))
                 .GroupBy(x => x.File.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g

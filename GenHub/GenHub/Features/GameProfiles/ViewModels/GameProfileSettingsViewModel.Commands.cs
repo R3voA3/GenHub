@@ -643,8 +643,6 @@ public partial class GameProfileSettingsViewModel
 
             if (dialogOwner == null) return;
 
-            if (dialogOwner == null) return;
-
             var vm = new AddLocalContentViewModel(_localContentService, _contentStorageService, null);
             var window = new Views.AddLocalContentWindow
             {

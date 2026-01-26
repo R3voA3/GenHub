@@ -108,7 +108,8 @@ public sealed class SymlinkOnlyStrategy(
             // Deduplicate files by RelativePath - multiple manifests may contain the same file
             // (e.g., GameClient and GameInstallation both contain the executable)
             // Group by path and take the first occurrence to avoid parallel creation conflicts
-            var manifestFiles = configuration.GetAllUniqueFiles()
+            // include files where InstallTarget is Workspace.
+            var manifestFiles = configuration.GetWorkspaceUniqueFiles()
                 .Select(f => new { Manifest = configuration.Manifests.First(m => m.Files.Contains(f)), File = f })
                 .ToList();
 

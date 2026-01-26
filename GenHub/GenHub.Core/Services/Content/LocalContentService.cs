@@ -184,7 +184,7 @@ public class LocalContentService(
                 logger.LogWarning("Local content update orchestration failed for '{ManifestId}': {Error}", existingManifestId, reconcileResult.FirstError);
 
                 // We still return the createResult manifest, but the old one might still be there
-                }
+            }
 
             return createResult;
         }
