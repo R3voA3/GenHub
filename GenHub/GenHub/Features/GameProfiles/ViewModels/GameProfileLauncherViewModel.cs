@@ -317,6 +317,26 @@ public partial class GameProfileLauncherViewModel(
         }
     }
 
+    /// <summary>
+    /// Generates a unique profile name by appending a number if needed.
+    /// </summary>
+    /// <param name="baseName">The base name to use for the profile.</param>
+    /// <returns>A unique profile name.</returns>
+    internal string GenerateUniqueProfileName(string baseName)
+    {
+        var copyName = $"{baseName} {ProfileConstants.CopyNameSuffix}";
+        var counter = 1;
+
+        // Keep adding numbers until we find a unique name (case-insensitive comparison)
+        while (Profiles.OfType<GameProfileItemViewModel>().Any(p => string.Equals(p.Name, copyName, StringComparison.OrdinalIgnoreCase)))
+        {
+            counter++;
+            copyName = $"{baseName} {string.Format(ProfileConstants.CopyNameNumberedFormat, counter)}";
+        }
+
+        return copyName;
+    }
+
     private static Window? GetMainWindow()
     {
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -1395,7 +1415,9 @@ public partial class GameProfileLauncherViewModel(
                 GameClientId = sourceProfile.GameClient?.Id,
                 GameClient = sourceProfile.GameClient,
                 PreferredStrategy = sourceProfile.WorkspaceStrategy,
-                EnabledContentIds = new List<string>(sourceProfile.EnabledContentIds),
+                EnabledContentIds = sourceProfile.EnabledContentIds != null
+                    ? new List<string>(sourceProfile.EnabledContentIds)
+                    : new List<string>(),
                 ThemeColor = sourceProfile.ThemeColor,
                 IconPath = sourceProfile.IconPath,
                 CoverPath = sourceProfile.CoverPath,
@@ -1517,26 +1539,6 @@ public partial class GameProfileLauncherViewModel(
             StatusMessage = $"Error copying profile {profile.Name}";
             notificationService.ShowError("Copy Error", $"An error occurred while copying profile '{profile.Name}'.");
         }
-    }
-
-    /// <summary>
-    /// Generates a unique profile name by appending a number if needed.
-    /// </summary>
-    /// <param name="baseName">The base name to use for the profile.</param>
-    /// <returns>A unique profile name.</returns>
-    private string GenerateUniqueProfileName(string baseName)
-    {
-        var copyName = $"{baseName} (Copy)";
-        var counter = 1;
-
-        // Keep adding numbers until we find a unique name
-        while (Profiles.OfType<GameProfileItemViewModel>().Any(p => p.Name == copyName))
-        {
-            counter++;
-            copyName = $"{baseName} (Copy {counter})";
-        }
-
-        return copyName;
     }
 
     /// <summary>

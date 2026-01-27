@@ -1,3 +1,4 @@
+using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.GameClients;
@@ -289,26 +290,21 @@ public class GameProfileLauncherViewModelTests
         // Add some existing profiles to simulate name conflicts
         var existingProfile1 = new GameProfileItemViewModel("id1", new Mock<IGameProfile>().Object, "icon.png", "cover.jpg")
         {
-            Name = "Test Profile (Copy)",
+            Name = $"Test Profile {ProfileConstants.CopyNameSuffix}",
         };
         var existingProfile2 = new GameProfileItemViewModel("id2", new Mock<IGameProfile>().Object, "icon.png", "cover.jpg")
         {
-            Name = "Test Profile (Copy 2)",
+            Name = $"Test Profile {string.Format(ProfileConstants.CopyNameNumberedFormat, 2)}",
         };
 
         vm.Profiles.Add(existingProfile1);
         vm.Profiles.Add(existingProfile2);
 
-        // Use reflection to access the private method
-        var method = typeof(GameProfileLauncherViewModel).GetMethod(
-            "GenerateUniqueProfileName",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
         // Act
-        var uniqueName = (string)method?.Invoke(vm, new object[] { "Test Profile" })!;
+        var uniqueName = vm.GenerateUniqueProfileName("Test Profile");
 
         // Assert
-        Assert.Equal("Test Profile (Copy 3)", uniqueName);
+        Assert.Equal($"Test Profile {string.Format(ProfileConstants.CopyNameNumberedFormat, 3)}", uniqueName);
     }
 
     private static ProfileResourceService CreateProfileResourceService()

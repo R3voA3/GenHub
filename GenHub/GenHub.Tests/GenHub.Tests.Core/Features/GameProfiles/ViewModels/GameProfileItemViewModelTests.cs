@@ -37,10 +37,10 @@ public class GameProfileItemViewModelTests
 
         var vm = new GameProfileItemViewModel("test-profile-id", mockProfile.Object, "icon.png", "cover.jpg");
 
-        var copyActionCalled = false;
-        vm.CopyProfileAction = _ =>
+        GameProfileItemViewModel? passedVm = null;
+        vm.CopyProfileAction = viewModel =>
         {
-            copyActionCalled = true;
+            passedVm = viewModel;
             return Task.CompletedTask;
         };
 
@@ -48,7 +48,8 @@ public class GameProfileItemViewModelTests
         await vm.CopyProfileCommand.ExecuteAsync(null);
 
         // Assert
-        Assert.True(copyActionCalled);
+        Assert.NotNull(passedVm);
+        Assert.Same(vm, passedVm);
     }
 
     /// <summary>
@@ -86,5 +87,26 @@ public class GameProfileItemViewModelTests
 
         // Act & Assert
         Assert.True(vm.CopyProfileCommand.CanExecute(null));
+    }
+
+    /// <summary>
+    /// Verifies that the copy profile command execution is safe when copy action is null.
+    /// </summary>
+    /// <returns>A <see cref="Task"/> representing the asynchronous unit test.</returns>
+    [Fact]
+    public async Task CopyProfileCommand_Execute_WhenActionIsNull_DoesNotThrow()
+    {
+        // Arrange
+        var mockProfile = new Mock<IGameProfile>();
+        mockProfile.SetupGet(p => p.Version).Returns("1.0");
+        mockProfile.SetupGet(p => p.ExecutablePath).Returns("C:/fake/path.exe");
+
+        var vm = new GameProfileItemViewModel("test-profile-id", mockProfile.Object, "icon.png", "cover.jpg");
+
+        // Don't set CopyProfileAction (null)
+
+        // Act & Assert - should not throw
+        var exception = await Record.ExceptionAsync(() => vm.CopyProfileCommand.ExecuteAsync(null));
+        Assert.Null(exception);
     }
 }
