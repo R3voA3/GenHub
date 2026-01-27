@@ -325,7 +325,7 @@ public partial class GameProfileLauncherViewModel(
     internal string GenerateUniqueProfileName(string baseName)
     {
         var copyName = $"{baseName} {ProfileConstants.CopyNameSuffix}";
-        var counter = 1;
+        var counter = 2;
 
         // Keep adding numbers until we find a unique name (case-insensitive comparison)
         while (Profiles.OfType<GameProfileItemViewModel>().Any(p => string.Equals(p.Name, copyName, StringComparison.OrdinalIgnoreCase)))
