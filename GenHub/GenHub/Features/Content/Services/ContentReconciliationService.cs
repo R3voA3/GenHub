@@ -9,6 +9,7 @@ using GenHub.Core.Interfaces.GameProfiles;
 using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Interfaces.Storage;
 using GenHub.Core.Interfaces.Workspace;
+using GenHub.Core.Models.GameClients;
 using GenHub.Core.Models.GameProfile;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
@@ -58,7 +59,8 @@ public class ContentReconciliationService(
         }
 
         var affectedProfiles = profilesResult.Data?.Where(p =>
-            p.EnabledContentIds?.Any(id => oldIds.Contains(id)) == true).ToList() ?? [];
+            (p.EnabledContentIds?.Any(id => oldIds.Contains(id)) == true) ||
+            (p.GameClient != null && oldIds.Contains(p.GameClient.Id))).ToList() ?? [];
 
         if (affectedProfiles.Count == 0)
         {
@@ -78,6 +80,27 @@ public class ContentReconciliationService(
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                GameClient? newGameClient = null;
+                if (profile.GameClient != null && replacements.TryGetValue(profile.GameClient.Id, out var newClientId))
+                {
+                    // Find the new manifest to create a proper GameClient object
+                    var manifestResult = await manifestPool.GetManifestAsync(ManifestId.Create(newClientId), cancellationToken);
+                    if (manifestResult.Success && manifestResult.Data != null)
+                    {
+                        var m = manifestResult.Data;
+                        newGameClient = new GameClient
+                        {
+                            Id = m.Id.Value,
+                            Name = m.Name,
+                            Version = m.Version ?? string.Empty,
+                            GameType = m.TargetGame,
+                            SourceType = m.ContentType,
+                            PublisherType = m.Publisher?.PublisherType,
+                            InstallationId = profile.GameClient.InstallationId, // Preserve installation link
+                        };
+                    }
+                }
+
                 // Clear workspace to force launch-time sync
                 if (!string.IsNullOrEmpty(profile.ActiveWorkspaceId))
                 {
@@ -88,6 +111,7 @@ public class ContentReconciliationService(
                 var updateRequest = new UpdateProfileRequest
                 {
                     EnabledContentIds = newContentIds,
+                    GameClient = newGameClient,
                     ActiveWorkspaceId = string.Empty,
                 };
 

@@ -715,8 +715,27 @@ public partial class GameProfileSettingsViewModel
                 StatusMessage = "Content updated";
                 _localNotificationService?.ShowSuccess("Content Updated", $"'{contentItem.DisplayName}' has been updated.");
 
+                // Remember the content name to restore selection after refresh (since the manifest ID may have changed)
+                var editedContentName = contentItem.DisplayName;
+                var wasEnabled = contentItem.IsEnabled;
+                var contentType = contentItem.ContentType;
+                var gameType = contentItem.GameType;
+
                 // Reload content and filters to reflect changes (e.g. type change)
                 await RefreshFiltersAndContentAsync();
+
+                // Restore selection by finding the item with the same name (but new manifest ID)
+                var updatedItem = AvailableContent.FirstOrDefault(c => c.DisplayName == editedContentName)
+                    ?? EnabledContent.FirstOrDefault(c => c.DisplayName == editedContentName);
+
+                if (updatedItem != null && wasEnabled)
+                {
+                    // If it was enabled and is now in available content, re-enable it
+                    if (!updatedItem.IsEnabled && AvailableContent.Contains(updatedItem))
+                    {
+                        await EnableContentInternal(updatedItem, bypassLoadingGuard: true);
+                    }
+                }
             }
         }
         catch (Exception ex)

@@ -1,4 +1,5 @@
 using GenHub.Core.Models.Enums;
+using GenHub.Core.Models.GameClients;
 
 namespace GenHub.Core.Models.GameProfile;
 
@@ -21,6 +22,11 @@ public class UpdateProfileRequest
     /// Gets or sets the list of enabled content IDs.
     /// </summary>
     public List<string>? EnabledContentIds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the game client.
+    /// </summary>
+    public GameClient? GameClient { get; set; }
 
     /// <summary>
     /// Gets or sets the preferred workspace strategy.

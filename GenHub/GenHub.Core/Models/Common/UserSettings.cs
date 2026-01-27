@@ -1,3 +1,4 @@
+using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Storage;
 
@@ -117,9 +118,48 @@ public class UserSettings : ICloneable
     public string? DismissedUpdateVersion { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether to automatically update GeneralsOnline without asking.
+    /// Null means ask the user. True means always update. False means never update (or ignore for now).
+    /// </summary>
+    public bool? AutoUpdateGeneralsOnline { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to automatically update Community Patch without asking.
+    /// Null means ask the user. True means always update. False means never update.
+    /// </summary>
+    public bool? AutoUpdateCommunityPatch { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to delete old GeneralsOnline versions when updating.
+    /// </summary>
+    public bool DeleteOldGeneralsOnlineVersions { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to delete old Community Patch versions when updating.
+    /// </summary>
+    public bool DeleteOldCommunityPatchVersions { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the user has seen the quickstart guide.
     /// </summary>
     public bool HasSeenQuickStart { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to automatically update SuperHackers without asking.
+    /// Null means ask the user. True means always update. False means never update.
+    /// </summary>
+    public bool? AutoUpdateSuperHackers { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to delete old SuperHackers versions when updating.
+    /// </summary>
+    public bool DeleteOldSuperHackersVersions { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the preferred update strategy (ReplaceCurrent vs CreateNewProfile).
+    /// Null means ask the user.
+    /// </summary>
+    public UpdateStrategy? PreferredUpdateStrategy { get; set; }
 
     /// <summary>Creates a deep copy of the current UserSettings instance.</summary>
     /// <returns>A new UserSettings instance with all properties deeply copied.</returns>
@@ -147,6 +187,12 @@ public class UserSettings : ICloneable
             CachePath = CachePath,
             ApplicationDataPath = ApplicationDataPath,
             HasSeenQuickStart = HasSeenQuickStart,
+            AutoUpdateGeneralsOnline = AutoUpdateGeneralsOnline,
+            AutoUpdateCommunityPatch = AutoUpdateCommunityPatch,
+            DeleteOldGeneralsOnlineVersions = DeleteOldGeneralsOnlineVersions,
+            DeleteOldCommunityPatchVersions = DeleteOldCommunityPatchVersions,
+            AutoUpdateSuperHackers = AutoUpdateSuperHackers,
+            DeleteOldSuperHackersVersions = DeleteOldSuperHackersVersions,
 
             SubscribedPrNumber = SubscribedPrNumber,
             SubscribedBranch = SubscribedBranch,
@@ -158,6 +204,220 @@ public class UserSettings : ICloneable
             UseInstallationAdjacentStorage = UseInstallationAdjacentStorage,
             ExplicitlySetProperties = [.. ExplicitlySetProperties],
             CasConfiguration = (CasConfiguration?)CasConfiguration?.Clone() ?? new CasConfiguration(),
+            SkippedUpdateVersions = SkippedUpdateVersions != null ? new Dictionary<string, string>(SkippedUpdateVersions) : [],
+            PreferredUpdateStrategy = PreferredUpdateStrategy,
+            PublisherSubscriptions = PublisherSubscriptions != null
+                ? [.. PublisherSubscriptions.Select(s => new PublisherSubscription
+                {
+                    PublisherId = s.PublisherId,
+                    PublisherName = s.PublisherName,
+                    IsSubscribed = s.IsSubscribed,
+                    SubscribedDate = s.SubscribedDate,
+                    LastUpdated = s.LastUpdated,
+                    SkippedVersion = s.SkippedVersion,
+                    SkippedVersionDate = s.SkippedVersionDate,
+                    AutoUpdateEnabled = s.AutoUpdateEnabled,
+                    PreferredUpdateStrategy = s.PreferredUpdateStrategy,
+                    DeleteOldVersions = s.DeleteOldVersions,
+                    LastInstalledVersion = s.LastInstalledVersion,
+                    LastInstalledDate = s.LastInstalledDate,
+                })]
+                : [],
         };
+    }
+
+    /// <summary>
+    /// Gets or sets the dictionary of skipped update versions per provider.
+    /// Key: Provider/Publisher ID. Value: Valid skipped version string.
+    /// @deprecated Use PublisherSubscriptions instead. This is maintained for backward compatibility.
+    /// </summary>
+    public Dictionary<string, string> SkippedUpdateVersions { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the collection of publisher subscriptions.
+    /// This enables the extensible publisher ecosystem where users can subscribe to
+    /// specific publishers and manage update preferences per publisher.
+    /// </summary>
+    public List<PublisherSubscription> PublisherSubscriptions { get; set; } = [];
+
+    /// <summary>
+    /// Gets or adds a publisher subscription for the specified publisher ID.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <param name="publisherName">The publisher display name (optional).</param>
+    /// <returns>The existing or newly created publisher subscription.</returns>
+    public PublisherSubscription GetOrCreateSubscription(string publisherId, string? publisherName = null)
+    {
+        var subscription = PublisherSubscriptions.FirstOrDefault(s =>
+            s.PublisherId.Equals(publisherId, StringComparison.OrdinalIgnoreCase));
+
+        if (subscription == null)
+        {
+            subscription = new PublisherSubscription
+            {
+                PublisherId = publisherId,
+                PublisherName = publisherName ?? publisherId,
+                IsSubscribed = true,
+            };
+            PublisherSubscriptions.Add(subscription);
+        }
+        else if (!string.IsNullOrEmpty(publisherName) && publisherName != subscription.PublisherName)
+        {
+            subscription.PublisherName = publisherName;
+        }
+
+        return subscription;
+    }
+
+    /// <summary>
+    /// Gets the subscription for a specific publisher, or null if not subscribed.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <returns>The subscription, or null if not found.</returns>
+    public PublisherSubscription? GetSubscription(string publisherId)
+    {
+        return PublisherSubscriptions.FirstOrDefault(s =>
+            s.PublisherId.Equals(publisherId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Checks if the user is subscribed to receive updates from a publisher.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <returns>True if subscribed; otherwise, false.</returns>
+    public bool IsSubscribedTo(string publisherId)
+    {
+        return GetSubscription(publisherId)?.IsActive ?? true; // Default to subscribed for backward compatibility
+    }
+
+    /// <summary>
+    /// Marks a specific version as skipped for a publisher.
+    /// This prevents notifications for this specific version, but newer versions will still be shown.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <param name="version">The version to skip.</param>
+    public void SkipVersion(string publisherId, string version)
+    {
+        // Update the new subscription system
+        var subscription = GetOrCreateSubscription(publisherId);
+        subscription.SkipVersion(version);
+
+        // Maintain backward compatibility by also updating SkippedUpdateVersions
+        SkippedUpdateVersions[publisherId] = version;
+    }
+
+    /// <summary>
+    /// Checks if a specific version should be skipped for a publisher.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <param name="version">The version to check.</param>
+    /// <returns>True if the version should be skipped; otherwise, false.</returns>
+    public bool IsVersionSkipped(string publisherId, string version)
+    {
+        // Check new subscription system first
+        var subscription = GetSubscription(publisherId);
+        if (subscription != null)
+        {
+            return subscription.ShouldSkipVersion(version);
+        }
+
+        // Fallback to legacy SkippedUpdateVersions dictionary
+        return SkippedUpdateVersions.TryGetValue(publisherId, out var skippedVersion) &&
+            string.Equals(version, skippedVersion, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Records that a version was successfully installed for a publisher.
+    /// This clears any skipped version for that publisher.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <param name="version">The version that was installed.</param>
+    public void RecordVersionInstalled(string publisherId, string version)
+    {
+        var subscription = GetOrCreateSubscription(publisherId);
+        subscription.RecordInstallation(version);
+
+        // Clear from legacy dictionary as well
+        if (SkippedUpdateVersions.ContainsKey(publisherId))
+        {
+            SkippedUpdateVersions.Remove(publisherId);
+        }
+    }
+
+    /// <summary>
+    /// Subscribes to a publisher to receive update notifications.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <param name="publisherName">The publisher display name (optional).</param>
+    public void SubscribeTo(string publisherId, string? publisherName = null)
+    {
+        var subscription = GetOrCreateSubscription(publisherId, publisherName);
+        subscription.IsSubscribed = true;
+    }
+
+    /// <summary>
+    /// Unsubscribes from a publisher to stop receiving update notifications.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    public void UnsubscribeFrom(string publisherId)
+    {
+        var subscription = GetSubscription(publisherId);
+        if (subscription != null)
+        {
+            subscription.IsSubscribed = false;
+        }
+    }
+
+    /// <summary>
+    /// Sets the auto-update preference for a publisher.
+    /// </summary>
+    /// <param name="publisherId">The publisher identifier.</param>
+    /// <param name="enabled">Whether auto-update is enabled.</param>
+    /// <param name="strategy">The preferred update strategy (optional).</param>
+    public void SetAutoUpdatePreference(string publisherId, bool enabled, Models.Enums.UpdateStrategy? strategy = null)
+    {
+        var subscription = GetOrCreateSubscription(publisherId);
+        subscription.AutoUpdateEnabled = enabled;
+        if (strategy.HasValue)
+        {
+            subscription.PreferredUpdateStrategy = strategy.Value;
+        }
+    }
+
+    /// <summary>
+    /// Gets all active subscriptions (publishers the user wants to receive updates from).
+    /// </summary>
+    /// <returns>A list of active publisher subscriptions.</returns>
+    public List<PublisherSubscription> GetActiveSubscriptions()
+    {
+        return PublisherSubscriptions.Where(s => s.IsActive).ToList();
+    }
+
+    /// <summary>
+    /// Gets all publishers that have a skipped version.
+    /// </summary>
+    /// <returns>A list of publisher subscriptions with skipped versions.</returns>
+    public List<PublisherSubscription> GetSkippedVersions()
+    {
+        return PublisherSubscriptions.Where(s => s.HasSkippedVersion).ToList();
+    }
+
+    /// <summary>
+    /// Migrates data from the legacy SkippedUpdateVersions dictionary to the new PublisherSubscriptions system.
+    /// This should be called once during migration to the new system.
+    /// </summary>
+    public void MigrateSkippedVersionsToSubscriptions()
+    {
+        foreach (var kvp in SkippedUpdateVersions)
+        {
+            var publisherId = kvp.Key;
+            var skippedVersion = kvp.Value;
+
+            var subscription = GetOrCreateSubscription(publisherId);
+            if (string.IsNullOrEmpty(subscription.SkippedVersion))
+            {
+                subscription.SkipVersion(skippedVersion);
+            }
+        }
     }
 }

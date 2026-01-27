@@ -256,13 +256,6 @@ public partial class GenPatcherDatCatalogParser(ILogger<GenPatcherDatCatalogPars
                 return null;
             }
 
-            // Skip official patches (104*, 108*) - language-specific patches that clutter the UI
-            if (metadata.Category == GenPatcherContentCategory.OfficialPatch)
-            {
-                _logger.LogDebug("Skipping official patch {Code} - not shown in UI", item.ContentCode);
-                return null;
-            }
-
             // Get download URL with mirror preference from provider
             var preferredUrl = GetPreferredDownloadUrl(item, provider);
             if (string.IsNullOrEmpty(preferredUrl))

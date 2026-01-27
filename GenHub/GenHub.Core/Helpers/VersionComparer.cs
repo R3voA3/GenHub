@@ -82,30 +82,99 @@ public static class VersionComparer
     }
 
     /// <summary>
-    /// Compares two numeric version strings.
+    /// Compares two numeric or semantic version strings.
     /// </summary>
     /// <param name="ver1">The first version.</param>
     /// <param name="ver2">The second version.</param>
     /// <returns>Comparison result.</returns>
     private static int CompareNumericVersions(string ver1, string ver2)
     {
-        // Try to parse as long integers for direct comparison
-        if (long.TryParse(ver1, out var num1) && long.TryParse(ver2, out var num2))
+        // Try to parse as long integers for direct comparison (e.g. "20250101")
+        bool isNum1 = long.TryParse(ver1, out var n1);
+        bool isNum2 = long.TryParse(ver2, out var n2);
+
+        if (isNum1 && isNum2)
         {
-            return num1.CompareTo(num2);
+            return NormalizeNumericDate(n1).CompareTo(NormalizeNumericDate(n2));
+        }
+
+        // Handle mixed Semantic vs Numeric-Date case
+        // If one is semantic (has dots) and the other is a "large" number (likely a date),
+        // we assume the Semantic version is newer (treating date-versions as legacy/v0).
+        bool hasDot1 = ver1.Contains('.');
+        bool hasDot2 = ver2.Contains('.');
+
+        if (hasDot1 && isNum2)
+        {
+             // ver1 is Semantic, ver2 is Numeric
+             // If ver2 looks like a date (> 100000), treat ver1 as newer if it starts with >= 1
+             if (n2 > 100000) return 1;
+        }
+        else if (isNum1 && hasDot2)
+        {
+             // ver1 is Numeric, ver2 is Semantic
+             if (n1 > 100000) return -1;
+        }
+
+        // Handle standard semantic versions (e.g. "1.10" vs "2.0")
+        if (hasDot1 || hasDot2)
+        {
+             return CompareSemanticVersions(ver1, ver2);
         }
 
         // Try to extract digits and compare
         var digits1 = ExtractDigits(ver1);
         var digits2 = ExtractDigits(ver2);
 
-        if (long.TryParse(digits1, out num1) && long.TryParse(digits2, out num2))
+        if (long.TryParse(digits1, out var ld1) && long.TryParse(digits2, out var ld2))
         {
-            return num1.CompareTo(num2);
+            return NormalizeNumericDate(ld1).CompareTo(NormalizeNumericDate(ld2));
         }
 
         // Fall back to string comparison
         return string.Compare(ver1, ver2, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Normalizes a numeric version that might be YYMMDD to YYYYMMDD.
+    /// Assumes 20xx for dates starting with 2-9 (e.g. 210101 -> 20210101).
+    /// </summary>
+    private static long NormalizeNumericDate(long version)
+    {
+        // 6 digits is likely YYMMDD (e.g. 260116)
+        if (version >= 100000 && version <= 991231)
+        {
+            return 20000000 + version;
+        }
+
+        return version;
+    }
+
+    /// <summary>
+    /// Compares two semantic version strings segment by segment.
+    /// </summary>
+    private static int CompareSemanticVersions(string ver1, string ver2)
+    {
+        var parts1 = ver1.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var parts2 = ver2.Split('.', StringSplitOptions.RemoveEmptyEntries);
+
+        for (int i = 0; i < Math.Max(parts1.Length, parts2.Length); i++)
+        {
+            var segment1 = i < parts1.Length ? ExtractDigits(parts1[i]) : "0";
+            var segment2 = i < parts2.Length ? ExtractDigits(parts2[i]) : "0";
+
+            if (long.TryParse(segment1, out var num1) && long.TryParse(segment2, out var num2))
+            {
+                if (num1 != num2) return num1.CompareTo(num2);
+            }
+            else
+            {
+                var strCompare = string.Compare(segment1, segment2, StringComparison.OrdinalIgnoreCase);
+                if (strCompare != 0) return strCompare;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.Manifest;
+using GenHub.Core.Models.CommunityOutpost;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
@@ -74,6 +75,8 @@ public class LocalContentService(
                     $"Directory not found: {directoryPath}");
             }
 
+            var sanitizedName = SanitizeForManifestId(name);
+
             logger.LogInformation(
                 "Creating local content manifest for '{Name}' from '{Path}' as {ContentType}",
                 name,
@@ -98,12 +101,30 @@ public class LocalContentService(
                 manifest.Dependencies.Add(new ContentDependency
                 {
                     Id = ManifestId.Create(ManifestConstants.DefaultContentDependencyId),
+                    Name = "Base Game Installation (Required)",
                     DependencyType = ContentType.GameInstallation,
                     CompatibleGameTypes = [targetGame],
                     IsOptional = false,
                 });
 
                 logger.LogInformation("Auto-added GameInstallation dependency for local GameClient");
+
+                // Check if this looks like a GenPatcher official client (10zh, 10gn)
+                // If so, we can link to the files directly if they are already in a game-like structure
+                if (GenPatcherContentRegistry.IsKnownCode(name) || GenPatcherContentRegistry.IsKnownCode(sanitizedName))
+                {
+                    var code = GenPatcherContentRegistry.IsKnownCode(name) ? name : sanitizedName;
+                    var metadata = GenPatcherContentRegistry.GetMetadata(code);
+
+                    if (metadata.Category == GenPatcherContentCategory.BaseGame)
+                    {
+                        logger.LogInformation("Detected GenPatcher base game content '{Code}', using GameInstallation linking", code);
+                        foreach (var file in manifest.Files)
+                        {
+                            file.SourceType = ContentSourceType.GameInstallation;
+                        }
+                    }
+                }
             }
 
             // Override publisher info to mark as local content
@@ -115,7 +136,6 @@ public class LocalContentService(
 
             // Update the manifest ID to use local prefix and compliant format
             // Format: schemaVersion.userVersion.publisher.contentType.contentName
-            var sanitizedName = SanitizeForManifestId(name);
             var typeString = contentType.ToString().ToLowerInvariant();
             manifest.Id = $"1.0.{LocalPublisherType}.{typeString}.{sanitizedName}";
 

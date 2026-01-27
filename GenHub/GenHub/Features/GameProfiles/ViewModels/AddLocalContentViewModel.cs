@@ -18,7 +18,6 @@ namespace GenHub.Features.GameProfiles.ViewModels;
 /// </summary>
 /// <param name="localContentService">Service for handling local content operations.</param>
 /// <param name="contentStorageService">Service for content storage operations.</param>
-
 /// <param name="logger">Logger instance.</param>
 public partial class AddLocalContentViewModel(
     ILocalContentService localContentService,

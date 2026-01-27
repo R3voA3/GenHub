@@ -7,6 +7,8 @@ using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Interfaces.Notifications;
 using GenHub.Core.Interfaces.Storage;
 using GenHub.Core.Interfaces.Workspace;
+using GenHub.Features.Content.Services.CommunityOutpost;
+using GenHub.Features.Content.Services.SuperHackers;
 using GenHub.Infrastructure.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -279,6 +281,20 @@ public class GameProfileModuleTests
         services.AddSingleton<INotificationService>(new Mock<INotificationService>().Object);
         services.AddSingleton<GenHub.Core.Interfaces.Shortcuts.IShortcutService>(new Mock<GenHub.Core.Interfaces.Shortcuts.IShortcutService>().Object);
         services.AddScoped(provider => new Mock<IGeneralsOnlineProfileReconciler>().Object);
+        services.AddScoped(provider => new Mock<ICommunityOutpostProfileReconciler>().Object);
+        services.AddScoped(provider =>
+        {
+            return new SuperHackersProfileReconciler(
+                new Mock<Microsoft.Extensions.Logging.ILogger<SuperHackersProfileReconciler>>().Object,
+                null!, // UpdateService not needed for resolution test
+                new Mock<IContentManifestPool>().Object,
+                new Mock<IContentOrchestrator>().Object,
+                new Mock<IContentReconciliationService>().Object,
+                new Mock<INotificationService>().Object,
+                new Mock<IDialogService>().Object,
+                new Mock<IUserSettingsService>().Object,
+                new Mock<IGameProfileManager>().Object);
+        });
 
         // Act
         services.AddGameProfileServices();

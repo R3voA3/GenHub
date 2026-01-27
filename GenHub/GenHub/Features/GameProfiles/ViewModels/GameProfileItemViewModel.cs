@@ -17,37 +17,7 @@ namespace GenHub.Features.GameProfiles.ViewModels;
 public partial class GameProfileItemViewModel : ViewModelBase
 {
     /// <summary>
-    /// Gets or sets the action to launch the profile.
-    /// </summary>
-    public Func<GameProfileItemViewModel, Task>? LaunchAction { get; set; }
-
-    /// <summary>
-    /// Gets or sets the action to edit the profile.
-    /// </summary>
-    public Func<GameProfileItemViewModel, Task>? EditProfileAction { get; set; }
-
-    /// <summary>
-    /// Gets or sets the action to delete the profile.
-    /// </summary>
-    public Func<GameProfileItemViewModel, Task>? DeleteProfileAction { get; set; }
-
-    /// <summary>
-    /// Gets or sets the action to create a shortcut for the profile.
-    /// </summary>
-    public Func<GameProfileItemViewModel, Task>? CreateShortcutAction { get; set; }
-
-    /// <summary>
-    /// Gets or sets the action to stop the profile.
-    /// </summary>
-    public Func<GameProfileItemViewModel, Task>? StopProfileAction { get; set; }
-
-    /// <summary>
-    /// Gets or sets the action to toggle Steam launch mode.
-    /// </summary>
-    public Func<GameProfileItemViewModel, Task>? ToggleSteamLaunchAction { get; set; }
-
-    /// <summary>
-    /// Launches the profile using the injected action.
+    /// Launches profile using the injected action.
     /// </summary>
     [RelayCommand]
     private async Task LaunchProfile()
@@ -59,7 +29,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Edits the profile using the injected action.
+    /// Edits profile using the injected action.
     /// </summary>
     [RelayCommand]
     private async Task EditProfile()
@@ -71,7 +41,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Deletes the profile using the injected action.
+    /// Deletes profile using the injected action.
     /// </summary>
     [RelayCommand]
     private async Task DeleteProfile()
@@ -83,7 +53,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Creates a shortcut for the profile using the injected action.
+    /// Creates a shortcut for profile using the injected action.
     /// </summary>
     [RelayCommand]
     private async Task CreateShortcut()
@@ -95,7 +65,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Stops the profile using the injected action.
+    /// Stops profile using the injected action.
     /// </summary>
     [RelayCommand]
     private async Task StopProfile()
@@ -119,7 +89,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Toggles the edit mode for this specific profile.
+    /// Toggles edit mode for this specific profile.
     /// </summary>
     [RelayCommand]
     private void ToggleEditMode()
@@ -212,7 +182,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     private string? _sourceTypeName;
 
     /// <summary>
-    /// Gets or sets a value indicating whether workflow info is present.
+    /// Gets or sets a value indicating whether the workflow info is present.
     /// </summary>
     [ObservableProperty]
     private bool _hasWorkflowInfo;
@@ -367,6 +337,45 @@ public partial class GameProfileItemViewModel : ViewModelBase
     public IGameProfile Profile { get; }
 
     /// <summary>
+    /// Gets or sets the action to launch the profile.
+    /// </summary>
+    public Func<GameProfileItemViewModel, Task>? LaunchAction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action to edit the profile.
+    /// </summary>
+    public Func<GameProfileItemViewModel, Task>? EditProfileAction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action to delete the profile.
+    /// </summary>
+    public Func<GameProfileItemViewModel, Task>? DeleteProfileAction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action to create a shortcut for the profile.
+    /// </summary>
+    public Func<GameProfileItemViewModel, Task>? CreateShortcutAction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action to stop the profile.
+    /// </summary>
+    public Func<GameProfileItemViewModel, Task>? StopProfileAction { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action to toggle Steam launch mode.
+    /// </summary>
+    public Func<GameProfileItemViewModel, Task>? ToggleSteamLaunchAction { get; set; }
+
+    /// <summary>
+    /// Explicitly notifies that the CanLaunch and CanEdit properties may have changed.
+    /// </summary>
+    public void NotifyCanLaunchChanged()
+    {
+        OnPropertyChanged(nameof(CanLaunch));
+        OnPropertyChanged(nameof(CanEdit));
+    }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="GameProfileItemViewModel"/> class.
     /// </summary>
     /// <param name="profileId">The profile ID.</param>
@@ -402,11 +411,14 @@ public partial class GameProfileItemViewModel : ViewModelBase
             var installationManifestId = gameProfile.EnabledContentIds?.FirstOrDefault(id => id.Contains("-installation"));
             if (!string.IsNullOrEmpty(installationManifestId))
             {
-                ExtractManifestInfo(installationManifestId);
+                // We use this to check for color/branding mostly?
+                // Actually ExtractManifestInfo primarily sets Publisher, Color, Cover.
+                // For branding, we want GameClient (Mod) to take precedence over Installation (Steam).
+                // So let's look at GameClient FIRST for branding/color.
             }
 
-            // Fallback to GameClient manifest if no installation manifest found
-            else if (gameProfile.GameClient != null)
+            // Prioritize GameClient for branding (Colors/Covers) and Version
+            if (gameProfile.GameClient != null)
             {
                 ExtractManifestInfo(gameProfile.GameClient.Id);
 
@@ -431,35 +443,8 @@ public partial class GameProfileItemViewModel : ViewModelBase
                 }
             }
 
-            // Use actual profile description if available, otherwise generate a friendly one
-            if (!string.IsNullOrEmpty(gameProfile.Description))
-            {
-                _description = gameProfile.Description;
-            }
-            else
-            {
-                // Generate user-friendly description with game type and version information as fallback
-                var gameTypeName = GetFriendlyGameTypeName(profile.GameClient?.GameType);
-
-                var versionInfo = string.Empty;
-                if (!string.IsNullOrEmpty(_gameVersion) &&
-                    !_gameVersion.Equals(GameClientConstants.UnknownVersion, StringComparison.OrdinalIgnoreCase) &&
-                    !_gameVersion.Equals("Auto-Updated", StringComparison.OrdinalIgnoreCase) &&
-                    !_gameVersion.Equals("Automatically added", StringComparison.OrdinalIgnoreCase) &&
-                    !_gameVersion.Contains("Automatically", StringComparison.OrdinalIgnoreCase))
-                {
-                     // If it doesn't start with 'v' (e.g. GeneralsOnline datecode), add it for description context?
-                     // Or better, just use exactly what is in _gameVersion since we formatted it nicely.
-                     // The previous code added 'v' unconditionally.
-                     // Let's rely on _gameVersion having the prefix if standard, or raw if datecode.
-                     versionInfo = _gameVersion;
-                }
-
-                var publisherInfo = !string.IsNullOrEmpty(_publisher) ? $" • {_publisher}" : string.Empty;
-                _description = string.IsNullOrEmpty(versionInfo)
-                    ? $"{gameTypeName}{publisherInfo}"
-                    : $"{gameTypeName} • {versionInfo}{publisherInfo}";
-            }
+            // Now generate the badge description using our new robust logic
+            UpdateDescription(gameProfile);
         }
 
         // Set color value with game type defaults or profile theme
@@ -467,8 +452,9 @@ public partial class GameProfileItemViewModel : ViewModelBase
         {
             _colorValue = gp.ThemeColor;
         }
-        else
+        else if (string.IsNullOrEmpty(_colorValue))
         {
+            // Only set default if ExtractManifestInfo didn't set a branded one
             _colorValue = GetDefaultColorForGameType(profile.GameClient?.GameType);
         }
 
@@ -539,7 +525,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
     public bool HasBuildInfo => !string.IsNullOrEmpty(BuildInfo as string);
 
     /// <summary>
-    /// Updates the workspace status based on current state.
+    /// Updates the workspace status based on the current state.
     /// </summary>
     /// <param name="activeWorkspaceId">The active workspace ID.</param>
     /// <param name="strategy">The workspace strategy.</param>
@@ -621,34 +607,8 @@ public partial class GameProfileItemViewModel : ViewModelBase
             }
 
             // Update description
-            if (!string.IsNullOrEmpty(gameProfile.Description))
-            {
-                Description = gameProfile.Description;
-            }
-
-            // Update workspace info
-            ActiveWorkspaceId = gameProfile.ActiveWorkspaceId;
-            UseSteamLaunch = gameProfile.UseSteamLaunch ?? true;
-
-            // Update visuals
-            if (!string.IsNullOrEmpty(gameProfile.ThemeColor))
-            {
-                ColorValue = gameProfile.ThemeColor;
-            }
-
-            if (!string.IsNullOrEmpty(gameProfile.IconPath))
-            {
-                IconPath = gameProfile.IconPath;
-            }
-
-            if (!string.IsNullOrEmpty(gameProfile.CoverPath))
-            {
-                var normalizedCoverPath = NormalizeCoverPath(gameProfile.CoverPath);
-                CoverPath = normalizedCoverPath;
-                CoverImagePath = normalizedCoverPath;
-            }
-
-            CommandLineArguments = gameProfile.CommandLineArguments;
+            // Update description layout
+            UpdateDescription(gameProfile);
         }
 
         // Notify UI of all property changes
@@ -664,13 +624,89 @@ public partial class GameProfileItemViewModel : ViewModelBase
         OnPropertyChanged(nameof(CommandLineArguments));
     }
 
-    /// <summary>
-    /// Explicitly notifies that the CanLaunch and CanEdit properties may have changed.
-    /// </summary>
-    public void NotifyCanLaunchChanged()
+    private void UpdateDescription(GameProfile gameProfile)
     {
-        OnPropertyChanged(nameof(CanLaunch));
-        OnPropertyChanged(nameof(CanEdit));
+        // Use actual profile description if available
+        if (!string.IsNullOrEmpty(gameProfile.Description))
+        {
+            Description = gameProfile.Description;
+            return;
+        }
+
+        // 1. Extract Installation Source
+        string installationSource = string.Empty;
+
+        // Try to get from GameInstallationId first (it might be a manifest ID)
+        if (!string.IsNullOrEmpty(gameProfile.GameInstallationId))
+        {
+            installationSource = GetPublisherNameFromId(gameProfile.GameInstallationId);
+        }
+
+        // If that failed or looked generic, try enabled content
+        if (string.IsNullOrEmpty(installationSource) || installationSource == "Available" || installationSource == "Unknown")
+        {
+            var installManifestId = gameProfile.EnabledContentIds?.FirstOrDefault(id => id.Contains("-installation"));
+            if (!string.IsNullOrEmpty(installManifestId))
+            {
+                installationSource = GetPublisherNameFromId(installManifestId);
+            }
+        }
+
+        if (string.IsNullOrEmpty(installationSource))
+        {
+            // Fallback to internal checking
+            installationSource = IsSteamInstallation ? "Steam" : "PC";
+        }
+
+        // 2. Content Info (_publisher and _gameVersion are set by ExtractManifestInfo called earlier)
+        var contentPublisher = Publisher;
+        var version = GameVersion;
+
+        // 3. Construct Badge/Description
+        // Format: "Steam • 1.04 • Generals" or "Steam • 20241010 • Generals Online"
+        var parts = new System.Collections.Generic.List<string>();
+
+        if (!string.IsNullOrEmpty(installationSource)) parts.Add(installationSource);
+        if (!string.IsNullOrEmpty(version)) parts.Add(version);
+
+        // Only add publisher if it's different from installation source (don't say "Steam • 1.04 • Steam")
+        // And if it's not generic "Generals" if we already have context?
+        // User asked for "Generals Online" specifically.
+        if (!string.IsNullOrEmpty(contentPublisher) &&
+            !string.Equals(contentPublisher, installationSource, StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add(contentPublisher);
+        }
+
+        // If publisher is missing, maybe add Game Type?
+        else if (string.IsNullOrEmpty(contentPublisher))
+        {
+            parts.Add(GetFriendlyGameTypeName(gameProfile.GameClient?.GameType));
+        }
+
+        Description = string.Join(" • ", parts);
+    }
+
+    private string GetPublisherNameFromId(string manifestId)
+    {
+        if (string.IsNullOrEmpty(manifestId)) return string.Empty;
+        var segments = manifestId.Split('.');
+        if (segments.Length < 3) return string.Empty;
+
+        var publisher = segments[2].ToLowerInvariant();
+        return publisher switch
+        {
+            PublisherTypeConstants.Steam => "Steam",
+            PublisherTypeConstants.EaApp => "EA App",
+            "thefirstdecade" => "The First Decade",
+            PublisherTypeConstants.Retail => "Retail",
+            "cdiso" => "CD/ISO",
+            "wine" => "Wine",
+            PublisherTypeConstants.GeneralsOnline => "Generals Online",
+            PublisherTypeConstants.TheSuperHackers => "The Super Hackers",
+            CommunityOutpostConstants.PublisherType => "Community Outpost",
+            _ => System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(publisher),
+        };
     }
 
     /// <summary>
@@ -784,6 +820,7 @@ public partial class GameProfileItemViewModel : ViewModelBase
                 PublisherTypeConstants.GeneralsOnline => "Generals Online",
                 PublisherTypeConstants.TheSuperHackers => "The Super Hackers",
                 CommunityOutpostConstants.PublisherType => "Community Outpost",
+                "local" => "Local",
                 _ => segments[2].ToUpperInvariant(),
             };
 
@@ -809,7 +846,13 @@ public partial class GameProfileItemViewModel : ViewModelBase
             }
 
             // Parse version: segment[1] contains the user version (e.g., 104, 108)
-            if (int.TryParse(segments[1], out var versionNumber) && versionNumber > 0)
+            // For local content, don't show version at all since it's always 0
+            if (publisherSegment == "local")
+            {
+                // Local content has no meaningful version
+                GameVersion = string.Empty;
+            }
+            else if (int.TryParse(segments[1], out var versionNumber) && versionNumber > 0)
             {
                 if (publisherSegment == PublisherTypeConstants.GeneralsOnline)
                 {

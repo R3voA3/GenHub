@@ -199,11 +199,10 @@ public static class GenPatcherContentRegistry
         ["hlei"] = new GenPatcherContentMetadata
         {
             ContentCode = "hlei",
-            DisplayName = "Hotkeys - English (Icons)",
-            Description = "English icon-based hotkey layout",
+            DisplayName = "Leikeze's Hotkeys",
+            Description = "A comprehensive hotkey set by Leikeze. Supports multiple languages (English, German, Russian) and both Generals and Zero Hour.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
-            LanguageCode = "en",
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
         },

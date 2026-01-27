@@ -21,6 +21,7 @@ using GenHub.Features.Content.Services.GitHub;
 using GenHub.Features.Content.Services.LocalContent;
 using GenHub.Features.Content.Services.Publishers;
 using GenHub.Features.Content.Services.Reconciliation;
+using GenHub.Features.Content.Services.SuperHackers;
 using GenHub.Features.Downloads.ViewModels;
 using GenHub.Features.GitHub.Services;
 using GenHub.Features.Manifest;
@@ -172,6 +173,9 @@ public static class ContentPipelineModule
         // Register SuperHackers update service
         services.AddSingleton<SuperHackersUpdateService>();
 
+        // Register SuperHackers profile reconciler
+        services.AddSingleton<SuperHackersProfileReconciler>();
+
         // Register GitHub generic manifest factory
         services.AddTransient<GitHubManifestFactory>();
         services.AddTransient<IPublisherManifestFactory>(sp => sp.GetRequiredService<GitHubManifestFactory>());
@@ -227,10 +231,13 @@ public static class ContentPipelineModule
 
         // Register Community Outpost manifest factory
         services.AddTransient<CommunityOutpostManifestFactory>();
-        services.AddTransient<IPublisherManifestFactory, CommunityOutpostManifestFactory>();
 
-        // Register Community Outpost update service
+        // Register Community Outpost services
+        services.AddSingleton<CommunityOutpostDiscoverer>();
+        services.AddSingleton<CommunityOutpostResolver>();
         services.AddSingleton<CommunityOutpostUpdateService>();
+        services.AddSingleton<ICommunityOutpostProfileReconciler, CommunityOutpostProfileReconciler>(); // Register Reconciler
+        services.AddTransient<IPublisherManifestFactory, CommunityOutpostManifestFactory>();
     }
 
     /// <summary>

@@ -23,105 +23,6 @@ public class CommunityOutpostManifestFactory(
     ILogger<CommunityOutpostManifestFactory> logger,
     IFileHashProvider hashProvider) : IPublisherManifestFactory
 {
-    /// <inheritdoc />
-    public string PublisherId => CommunityOutpostConstants.PublisherId;
-
-    /// <inheritdoc />
-    public bool CanHandle(ContentManifest manifest)
-    {
-        var publisherMatches = manifest.Publisher?.PublisherType?.Equals(
-            CommunityOutpostConstants.PublisherType,
-            StringComparison.OrdinalIgnoreCase) == true;
-
-        logger.LogDebug(
-            "CanHandle check for manifest {ManifestId}: Publisher={Publisher}, Type={PublisherType}, Result={Result}",
-            manifest.Id,
-            manifest.Publisher?.Name,
-            manifest.Publisher?.PublisherType,
-            publisherMatches);
-
-        return publisherMatches;
-    }
-
-    /// <inheritdoc />
-    public async Task<List<ContentManifest>> CreateManifestsFromExtractedContentAsync(
-        ContentManifest originalManifest,
-        string extractedDirectory,
-        CancellationToken cancellationToken = default)
-    {
-        logger.LogInformation(
-            "Creating Community Outpost manifest from extracted content in: {Directory}",
-            extractedDirectory);
-
-        if (!Directory.Exists(extractedDirectory))
-        {
-            logger.LogError("Extracted directory does not exist: {Directory}", extractedDirectory);
-            return [];
-        }
-
-        // Get the content code and install target from the original manifest metadata
-        var contentCode = GetContentCodeFromManifest(originalManifest);
-        var contentMetadata = GenPatcherContentRegistry.GetMetadata(contentCode);
-
-        logger.LogInformation(
-            "Processing content: {Name} ({ContentType}) with content code {Code}, InstallTarget={InstallTarget}",
-            originalManifest.Name,
-            originalManifest.ContentType,
-            contentCode,
-            contentMetadata.InstallTarget);
-
-        // Build the manifest with file entries
-        var manifest = await BuildManifestWithFilesAsync(
-            originalManifest,
-            extractedDirectory,
-            contentMetadata,
-            cancellationToken);
-
-        if (manifest == null)
-        {
-            logger.LogWarning("Failed to build manifest for {Name}", originalManifest.Name);
-            return [];
-        }
-
-        logger.LogInformation(
-            "Created manifest {ManifestId} with {FileCount} files",
-            manifest.Id,
-            manifest.Files.Count);
-
-        return [manifest];
-    }
-
-    /// <inheritdoc />
-    public string GetManifestDirectory(ContentManifest manifest, string extractedDirectory)
-    {
-        // Get the content code to determine the correct subdirectory
-        var contentCode = GetContentCodeFromManifest(manifest);
-
-        // Check if there's a subdirectory matching the content code
-        var contentSubdir = Path.Combine(extractedDirectory, contentCode);
-        if (Directory.Exists(contentSubdir))
-        {
-            return contentSubdir;
-        }
-
-        // Check for common subdirectory patterns (CCG for Generals, ZH for Zero Hour)
-        var ccgSubdir = Path.Combine(extractedDirectory, "CCG");
-        var zhSubdir = Path.Combine(extractedDirectory, "ZH");
-
-        if (manifest.TargetGame == GameType.Generals && Directory.Exists(ccgSubdir))
-        {
-            return ccgSubdir;
-        }
-
-        if (manifest.TargetGame == GameType.ZeroHour && Directory.Exists(zhSubdir))
-        {
-            return zhSubdir;
-        }
-
-        // Default to extracted directory
-        return extractedDirectory;
-    }
-
     /// <summary>
     /// Extracts the content code from manifest metadata tags.
     /// </summary>
@@ -192,6 +93,229 @@ public class CommunityOutpostManifestFactory(
 
         // Use the content type's default target
         return defaultTarget;
+    }
+
+    /// <inheritdoc />
+    public string PublisherId => CommunityOutpostConstants.PublisherId;
+
+    /// <inheritdoc />
+    public bool CanHandle(ContentManifest manifest)
+    {
+        var publisherMatches = manifest.Publisher?.PublisherType?.Equals(
+            CommunityOutpostConstants.PublisherType,
+            StringComparison.OrdinalIgnoreCase) == true;
+
+        logger.LogDebug(
+            "CanHandle check for manifest {ManifestId}: Publisher={Publisher}, Type={PublisherType}, Result={Result}",
+            manifest.Id,
+            manifest.Publisher?.Name,
+            manifest.Publisher?.PublisherType,
+            publisherMatches);
+
+        return publisherMatches;
+    }
+
+    /// <inheritdoc />
+    public async Task<List<ContentManifest>> CreateManifestsFromExtractedContentAsync(
+        ContentManifest originalManifest,
+        string extractedDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        logger.LogInformation(
+            "Creating Community Outpost manifest from extracted content in: {Directory}",
+            extractedDirectory);
+
+        if (!Directory.Exists(extractedDirectory))
+        {
+            logger.LogError("Extracted directory does not exist: {Directory}", extractedDirectory);
+            return [];
+        }
+
+        // Get the content code and install target from the original manifest metadata
+        var contentCode = GetContentCodeFromManifest(originalManifest);
+        var contentMetadata = GenPatcherContentRegistry.GetMetadata(contentCode);
+
+        logger.LogInformation(
+            "Processing content: {Name} ({ContentType}) with content code {Code}, InstallTarget={InstallTarget}",
+            originalManifest.Name,
+            originalManifest.ContentType,
+            contentCode,
+            contentMetadata.InstallTarget);
+
+        // Check for variants in subdirectories (e.g., ZH/BIG EN, CCG/BIG DE)
+        var variants = DetectVariants(extractedDirectory);
+        if (variants.Count > 0)
+        {
+            logger.LogInformation("Detected {VariantCount} variants in package", variants.Count);
+            var results = new List<ContentManifest>();
+
+            foreach (var variant in variants)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var variantManifest = await BuildVariantManifestAsync(
+                    originalManifest,
+                    variant.FullPath,
+                    contentMetadata,
+                    variant.Game,
+                    variant.LanguageCode,
+                    cancellationToken);
+
+                if (variantManifest != null)
+                {
+                    results.Add(variantManifest);
+                }
+            }
+
+            return results;
+        }
+
+        // Fallback to building a single manifest from the root directory
+        var manifest = await BuildManifestWithFilesAsync(
+            originalManifest,
+            extractedDirectory,
+            contentMetadata,
+            cancellationToken);
+
+        if (manifest == null)
+        {
+            logger.LogWarning("Failed to build manifest for {Name}", originalManifest.Name);
+            return [];
+        }
+
+        logger.LogInformation(
+            "Created manifest {ManifestId} with {FileCount} files",
+            manifest.Id,
+            manifest.Files.Count);
+
+        return [manifest];
+    }
+
+    /// <inheritdoc />
+    public string GetManifestDirectory(ContentManifest manifest, string extractedDirectory)
+    {
+        // Get the content code to determine the correct subdirectory
+        var contentCode = GetContentCodeFromManifest(manifest);
+
+        // Check if there's a subdirectory matching the content code
+        var contentSubdir = Path.Combine(extractedDirectory, contentCode);
+        if (Directory.Exists(contentSubdir))
+        {
+            return contentSubdir;
+        }
+
+        // Check for common subdirectory patterns (CCG for Generals, ZH for Zero Hour)
+        var ccgSubdir = Path.Combine(extractedDirectory, "CCG");
+        var zhSubdir = Path.Combine(extractedDirectory, "ZH");
+
+        if (manifest.TargetGame == GameType.Generals && Directory.Exists(ccgSubdir))
+        {
+            return ccgSubdir;
+        }
+
+        if (manifest.TargetGame == GameType.ZeroHour && Directory.Exists(zhSubdir))
+        {
+            return zhSubdir;
+        }
+
+        // Default to extracted directory
+        return extractedDirectory;
+    }
+
+    private sealed record VariantInfo(string FullPath, GameType Game, string? LanguageCode);
+
+    private static List<VariantInfo> DetectVariants(string extractedDirectory)
+    {
+        var variants = new List<VariantInfo>();
+
+        // Check for ZH and CCG (Generals) root folders
+        var gameDirs = new Dictionary<string, GameType>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ZH"] = GameType.ZeroHour,
+            ["CCG"] = GameType.Generals,
+        };
+
+        foreach (var (dirName, game) in gameDirs)
+        {
+            var gamePath = Path.Combine(extractedDirectory, dirName);
+            if (!Directory.Exists(gamePath)) continue;
+
+            // Check for language subdirectories (BIG EN, BIG DE, etc.)
+            var langDirs = Directory.GetDirectories(gamePath, "BIG *");
+            if (langDirs.Length > 0)
+            {
+                foreach (var langPath in langDirs)
+                {
+                    var langSuffix = Path.GetFileName(langPath)["BIG ".Length..].Trim().ToLowerInvariant();
+                    var langCode = langSuffix switch
+                    {
+                        "en" => "en",
+                        "de" => "de",
+                        "ru" => "ru",
+                        "fr" => "fr",
+                        "es" => "es",
+                        "it" => "it",
+                        "pl" => "pl",
+                        "zh" => "zh",
+                        "ko" => "ko",
+                        _ => langSuffix,
+                    };
+
+                    variants.Add(new VariantInfo(langPath, game, langCode));
+                }
+            }
+            else
+            {
+                // If no language dirs, just add the game dir as a variant
+                variants.Add(new VariantInfo(gamePath, game, null));
+            }
+        }
+
+        return variants;
+    }
+
+    private async Task<ContentManifest?> BuildVariantManifestAsync(
+        ContentManifest originalManifest,
+        string variantDirectory,
+        GenPatcherContentMetadata metadata,
+        GameType game,
+        string? languageCode,
+        CancellationToken cancellationToken)
+    {
+        var manifest = await BuildManifestWithFilesAsync(originalManifest, variantDirectory, metadata, cancellationToken);
+        if (manifest == null) return null;
+
+        // Update manifest identification for the variant
+        manifest.TargetGame = game;
+
+        var nameSuffix = string.Empty;
+        if (!string.IsNullOrEmpty(languageCode))
+        {
+            nameSuffix += $" ({languageCode.ToUpperInvariant()})";
+            manifest.Metadata.Tags ??= [];
+            if (!manifest.Metadata.Tags.Contains(languageCode))
+            {
+                manifest.Metadata.Tags.Add(languageCode);
+            }
+        }
+
+        if (game == GameType.Generals)
+        {
+            nameSuffix += " [Generals]";
+        }
+
+        manifest.Name += nameSuffix;
+
+        // Append to ID to make it unique
+        var variantIdPart = $"-{game.ToString().ToLowerInvariant()}";
+        if (!string.IsNullOrEmpty(languageCode))
+        {
+            variantIdPart += $"-{languageCode}";
+        }
+
+        manifest.Id = $"{manifest.Id}{variantIdPart}";
+
+        return manifest;
     }
 
     /// <summary>

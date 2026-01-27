@@ -90,6 +90,9 @@ public class WorkspaceManager(
                         var manifestsChanged = !currentManifestIds.SequenceEqual(cachedManifestIds, StringComparer.OrdinalIgnoreCase);
                         if (manifestsChanged)
                         {
+                            // Force recreation to ensure any orphaned files from the previous version are removed
+                            configuration.ForceRecreate = true;
+                            Console.Out.WriteLine($"[DEBUG] Manifests changed! ForceRecreate set to true. Cached: {string.Join(",", cachedManifestIds)}, Current: {string.Join(",", currentManifestIds)}");
                             logger.LogWarning(
                                 "[Workspace] Manifest IDs have changed - cached: [{Cached}], current: [{Current}]. Workspace will be recreated.",
                                 string.Join(", ", cachedManifestIds),
@@ -123,7 +126,7 @@ public class WorkspaceManager(
                                 logger.LogWarning(
                                     "[Workspace] Workspace {Id} validation failed, will recreate",
                                     configuration.Id);
-
+                                Console.Out.WriteLine($"[DEBUG] Workspace {configuration.Id} validation failed, will recreate.");
                                 // Fall through to recreate
                             }
                             else if (cachedFileCount > 0 || Directory.Exists(workspace.WorkspacePath))

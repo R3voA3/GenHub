@@ -49,6 +49,8 @@ public class ProfileLauncherFacade(
     IStorageLocationService storageLocationService,
     INotificationService notificationService,
     IGeneralsOnlineProfileReconciler generalsOnlineReconciler,
+    GenHub.Features.Content.Services.SuperHackers.SuperHackersProfileReconciler superHackersReconciler,
+    GenHub.Features.Content.Services.CommunityOutpost.ICommunityOutpostProfileReconciler communityOutpostReconciler,
     ILogger<ProfileLauncherFacade> logger) : IProfileLauncherFacade
 {
     /// <inheritdoc/>
@@ -358,9 +360,65 @@ public class ProfileLauncherFacade(
                     }
 
                     profile = profileResult.Data!;
-                    logger.LogDebug(
-                        "[Launch] Profile reloaded after GeneralsOnline update - EnabledContent: {ContentCount} items",
-                        profile.EnabledContentIds?.Count ?? 0);
+                }
+            }
+            else if (IsSuperHackersProfile(profile))
+            {
+                logger.LogDebug("[Launch] Step 2.5: Checking for SuperHackers updates");
+                var reconcileResult = await superHackersReconciler.CheckAndReconcileIfNeededAsync(
+                    profileId,
+                    cancellationToken);
+
+                if (!reconcileResult.Success)
+                {
+                    logger.LogError(
+                        "[Launch] SuperHackers reconciliation failed: {Error}",
+                        reconcileResult.FirstError);
+                    return ProfileOperationResult<GameLaunchInfo>.CreateFailure(
+                        $"SuperHackers update failed: {reconcileResult.FirstError}");
+                }
+
+                if (reconcileResult.Data)
+                {
+                    // Profile was updated, reload it
+                    logger.LogInformation("[Launch] Profile was updated by SuperHackers reconciliation, reloading");
+                    profileResult = await profileManager.GetProfileAsync(profileId, cancellationToken);
+                    if (profileResult.Failed)
+                    {
+                        return ProfileOperationResult<GameLaunchInfo>.CreateFailure(
+                            string.Join(", ", profileResult.Errors));
+                    }
+
+                    profile = profileResult.Data!;
+                }
+            }
+            else if (IsCommunityOutpostProfile(profile))
+            {
+                logger.LogDebug("[Launch] Step 2.5: Checking for Community Outpost updates");
+                var reconcileResult = await communityOutpostReconciler.CheckAndReconcileIfNeededAsync(
+                    profileId,
+                    cancellationToken);
+
+                if (!reconcileResult.Success)
+                {
+                    logger.LogWarning(
+                        "[Launch] Community Outpost reconciliation failed: {Error}",
+                        reconcileResult.FirstError);
+                    // Usually we don't fail launch for this provider as online play isn't strictly enforced
+                }
+                else if (reconcileResult.Data)
+                {
+
+                    // Profile was updated, reload it
+                    logger.LogInformation("[Launch] Profile was updated by Community Outpost reconciliation, reloading");
+                    profileResult = await profileManager.GetProfileAsync(profileId, cancellationToken);
+                    if (profileResult.Failed)
+                    {
+                        return ProfileOperationResult<GameLaunchInfo>.CreateFailure(
+                            string.Join(", ", profileResult.Errors));
+                    }
+
+                    profile = profileResult.Data!;
                 }
             }
 
@@ -1076,6 +1134,69 @@ public class ProfileLauncherFacade(
     }
 
     /// <summary>
+    /// Checks if a profile uses a SuperHackers game client.
+    /// </summary>
+    /// <param name="profile">The profile to check.</param>
+    /// <returns>True if the profile uses SuperHackers, false otherwise.</returns>
+    private static bool IsSuperHackersProfile(GameProfile profile)
+    {
+        // Check PublisherType first
+        if (profile.GameClient?.PublisherType?.Equals(
+            PublisherTypeConstants.TheSuperHackers,
+            StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        // Check if Name contains "SuperHackers"
+        if (profile.GameClient?.Name?.Contains("SuperHackers", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        // Final fallback: Check enabled content for SuperHackers manifests
+        if (profile.EnabledContentIds != null &&
+            profile.EnabledContentIds.Any(id => id.Contains("thesuperhackers", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a profile uses a Community Outpost game client.
+    /// </summary>
+    /// <param name="profile">The profile to check.</param>
+    /// <returns>True if the profile uses Community Outpost, false otherwise.</returns>
+    private static bool IsCommunityOutpostProfile(GameProfile profile)
+    {
+        // Check PublisherType
+        if (profile.GameClient?.PublisherType?.Equals(
+            CommunityOutpostConstants.PublisherType,
+            StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        // Check if Name contains "Community Outpost" or "Community Patch"
+        if (profile.GameClient?.Name?.Contains("Community Outpost", StringComparison.OrdinalIgnoreCase) == true ||
+            profile.GameClient?.Name?.Contains("Community Patch", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+
+        // Fallback: manifests
+        if (profile.EnabledContentIds != null &&
+            profile.EnabledContentIds.Any(id => id.Contains("communityoutpost", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Validates dependencies between manifests to ensure compatibility.
     /// </summary>
     /// <param name="manifests">The list of manifests to validate.</param>
@@ -1566,8 +1687,8 @@ public class ProfileLauncherFacade(
         {
             var id = ManifestId.Create(idString);
             var manifestResult = await manifestPool.GetManifestAsync(id, cancellationToken);
-            if (manifestResult.Success &&
-                (manifestResult.Data!.ContentType == ContentType.ModdingTool ||
+            if (manifestResult.Success && manifestResult.Data != null &&
+                (manifestResult.Data.ContentType == ContentType.ModdingTool ||
                  manifestResult.Data.ContentType == ContentType.Executable))
             {
                 return idString;
