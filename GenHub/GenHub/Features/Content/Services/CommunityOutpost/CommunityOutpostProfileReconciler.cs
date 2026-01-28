@@ -166,8 +166,9 @@ public class CommunityOutpostProfileReconciler(
                 if (createResult.Success) profilesUpdated = createResult.Data;
                 else notificationService.ShowWarning("Community Patch Update Partial", $"Failed to create some new profiles: {createResult.FirstError}");
             }
-            else // ReplaceCurrent
+            else
             {
+                // ReplaceCurrent
                 var manifestMapping = BuildManifestMapping(oldManifests, newManifests);
                 var updateProfilesResult = await reconciliationService.ReconcileBulkManifestReplacementAsync(
                     manifestMapping,

@@ -37,18 +37,19 @@ public class WorkspaceSyncTests
 
         _validatorMock = new Mock<IWorkspaceValidator>();
         _validatorMock.Setup(x => x.ValidateConfigurationAsync(It.IsAny<WorkspaceConfiguration>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GenHub.Core.Models.Results.ValidationResult("test", null));
+            .ReturnsAsync(new ValidationResult("test", null));
         _validatorMock.Setup(x => x.ValidatePrerequisitesAsync(It.IsAny<IWorkspaceStrategy>(), It.IsAny<WorkspaceConfiguration>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GenHub.Core.Models.Results.ValidationResult("test", null));
+            .ReturnsAsync(new ValidationResult("test", null));
         _validatorMock.Setup(x => x.ValidateWorkspaceAsync(It.IsAny<WorkspaceInfo>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<GenHub.Core.Models.Results.ValidationResult>.CreateSuccess(new GenHub.Core.Models.Results.ValidationResult("test", null)));
+            .ReturnsAsync(OperationResult<ValidationResult>.CreateSuccess(new ValidationResult("test", null)));
 
         _fileOperationsMock = new Mock<IFileOperationsService>();
-        var strategies = new List<IWorkspaceStrategy>
-        {
+        List<IWorkspaceStrategy> strategies =
+        [
+
             // Use a simplified strategy for testing that just creates a file indicating content
             new TestStrategy(_fileOperationsMock.Object),
-        };
+        ];
 
         // We need a real CasReferenceTracker for to manager constructor
         var casConfig = new CasConfiguration { CasRootPath = Path.Combine(_tempPath, "CAS") };
@@ -72,6 +73,7 @@ public class WorkspaceSyncTests
     private readonly Mock<IFileOperationsService> _fileOperationsMock;
     private readonly string _tempPath;
     private readonly string _appDataPath;
+
     /// <summary>
     /// Should sync correctly when switching content.
     /// </summary>
@@ -92,7 +94,7 @@ public class WorkspaceSyncTests
             Id = ManifestId.Create("1.0.local.mod.contenta"),
             Name = "Content A",
             ContentType = GenHub.Core.Models.Enums.ContentType.Mod,
-            Files = new List<ManifestFile> { new ManifestFile { RelativePath = "A.txt", SourceType = ContentSourceType.LocalFile } },
+            Files = [new() { RelativePath = "A.txt", SourceType = ContentSourceType.LocalFile }],
         };
 
         // Content B
@@ -101,19 +103,19 @@ public class WorkspaceSyncTests
             Id = ManifestId.Create("1.0.local.mod.contentb"),
             Name = "Content B",
             ContentType = GenHub.Core.Models.Enums.ContentType.Mod,
-            Files = new List<ManifestFile>
-            {
-                new ManifestFile { RelativePath = "B.txt", SourceType = ContentSourceType.LocalFile },
-                new ManifestFile { RelativePath = "Orphan.txt", SourceType = ContentSourceType.LocalFile },
-            },
+            Files =
+            [
+                new() { RelativePath = "B.txt", SourceType = ContentSourceType.LocalFile },
+                new() { RelativePath = "Orphan.txt", SourceType = ContentSourceType.LocalFile },
+            ],
         };
 
         // 1. Prepare with Content A
         var configA = new WorkspaceConfiguration
         {
             Id = profileId,
-            Manifests = new List<ContentManifest> { manifestA },
-            GameClient = new GameClient { Id = "gc1" },
+            Manifests = [manifestA],
+            GameClient = new() { Id = "gc1" },
             WorkspaceRootPath = workspaceRoot,
             BaseInstallationPath = baseInstall,
             Strategy = WorkspaceConstants.DefaultWorkspaceStrategy,
@@ -132,8 +134,8 @@ public class WorkspaceSyncTests
         var configB = new WorkspaceConfiguration
         {
             Id = profileId, // SAME ID
-            Manifests = new List<ContentManifest> { manifestB },
-            GameClient = new GameClient { Id = "gc1" },
+            Manifests = [manifestB],
+            GameClient = new() { Id = "gc1" },
             WorkspaceRootPath = workspaceRoot,
             BaseInstallationPath = baseInstall,
             Strategy = WorkspaceConstants.DefaultWorkspaceStrategy,
@@ -161,13 +163,8 @@ public class WorkspaceSyncTests
         Assert.False(File.Exists(Path.Combine(workspacePath, "Orphan.txt"))); // Should be gone if ForceRecreate worked
     }
 
-    private class TestStrategy : WorkspaceStrategyBase<TestStrategy>
+    private class TestStrategy(IFileOperationsService fileOps) : WorkspaceStrategyBase<TestStrategy>(fileOps, NullLogger<TestStrategy>.Instance)
     {
-        public TestStrategy(IFileOperationsService fileOps)
-            : base(fileOps, NullLogger<TestStrategy>.Instance)
-        {
-        }
-
         public override string Name => "Test";
 
         public override string Description => "Test Strategy";
@@ -236,7 +233,7 @@ public class WorkspaceSyncTests
             {
                 Id = configuration.Id,
                 WorkspacePath = workspacePath,
-                ManifestIds = configuration.Manifests.Select(m => m.Id.Value).ToList(),
+                ManifestIds = [.. configuration.Manifests.Select(m => m.Id.Value)],
                 FileCount = configuration.Manifests.Sum(m => m.Files.Count),
                 IsPrepared = true,
                 IsValid = true,

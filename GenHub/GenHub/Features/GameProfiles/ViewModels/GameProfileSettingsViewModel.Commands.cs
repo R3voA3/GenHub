@@ -709,33 +709,44 @@ public partial class GameProfileSettingsViewModel
 
             var result = await window.ShowDialog<bool>(owner);
 
-            if (result)
+            if (result && vm.CreatedContentItem != null)
             {
-                _logger?.LogInformation("Edited local content: {Name}", contentItem.DisplayName);
+                var updatedItem = vm.CreatedContentItem;
+                var oldId = contentItem.ManifestId.Value;
+                var newId = updatedItem.ManifestId.Value;
+
+                _logger?.LogInformation("Edited local content: {Name} (ID: {OldId} -> {NewId})", contentItem.DisplayName, oldId, newId);
                 StatusMessage = "Content updated";
                 _localNotificationService?.ShowSuccess("Content Updated", $"'{contentItem.DisplayName}' has been updated.");
 
-                // Remember the content name to restore selection after refresh (since the manifest ID may have changed)
-                var editedContentName = contentItem.DisplayName;
-                var wasEnabled = contentItem.IsEnabled;
-                var contentType = contentItem.ContentType;
-                var gameType = contentItem.GameType;
-
-                // Reload content and filters to reflect changes (e.g. type change)
-                await RefreshFiltersAndContentAsync();
-
-                // Restore selection by finding the item with the same name (but new manifest ID)
-                var updatedItem = AvailableContent.FirstOrDefault(c => c.DisplayName == editedContentName)
-                    ?? EnabledContent.FirstOrDefault(c => c.DisplayName == editedContentName);
-
-                if (updatedItem != null && wasEnabled)
+                // Architecture: Synchronize our internal collections IMMEDIATELY to avoid duplication/flicker.
+                // If it was in EnabledContent, replace it with the new item (maintaining enabled state).
+                var inEnabled = EnabledContent.FirstOrDefault(e => e.ManifestId.Value == oldId);
+                if (inEnabled != null)
                 {
-                    // If it was enabled and is now in available content, re-enable it
-                    if (!updatedItem.IsEnabled && AvailableContent.Contains(updatedItem))
-                    {
-                        await EnableContentInternal(updatedItem, bypassLoadingGuard: true);
-                    }
+                    var index = EnabledContent.IndexOf(inEnabled);
+                    updatedItem.IsEnabled = true;
+                    EnabledContent[index] = updatedItem;
                 }
+
+                // If it was in AvailableContent, remove the old one (the refresh below will add the new one back if appropriate).
+                var inAvailable = AvailableContent.FirstOrDefault(a => a.ManifestId.Value == oldId);
+                if (inAvailable != null)
+                {
+                    AvailableContent.Remove(inAvailable);
+                }
+
+                // If GameClient ID changed and this was our GameClient, synchronize SelectedGameInstallation.
+                if (contentItem.ContentType == ContentType.GameClient &&
+                    SelectedGameInstallation != null &&
+                    SelectedGameInstallation.ManifestId.Value == oldId)
+                {
+                    SelectedGameInstallation = updatedItem;
+                    _logger?.LogInformation("Synchronized SelectedGameInstallation with newly edited GameClient");
+                }
+
+                // Reload content and filters to reflect all changes (e.g. type changes, category updates).
+                await RefreshFiltersAndContentAsync();
             }
         }
         catch (Exception ex)

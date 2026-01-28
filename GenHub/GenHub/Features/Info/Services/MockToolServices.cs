@@ -728,6 +728,26 @@ public class MockProfileContentLoader : IProfileContentLoader
     /// <inheritdoc/>
     public Task<OperationResult<ContentManifest?>> GetManifestAsync(string manifestId)
         => Task.FromResult(OperationResult<ContentManifest?>.CreateSuccess(new ContentManifest()));
+
+    /// <inheritdoc/>
+    public ContentDisplayItem CreateManifestDisplayItem(
+        ContentManifest manifest,
+        string? sourceId = null,
+        string? gameClientId = null,
+        bool isEnabled = false)
+    {
+        return new ContentDisplayItem
+        {
+            Id = manifest.Id.Value,
+            ManifestId = manifest.Id.Value,
+            DisplayName = manifest.Name,
+            ContentType = manifest.ContentType,
+            GameType = manifest.TargetGame,
+            IsEnabled = isEnabled,
+            SourceId = sourceId ?? string.Empty,
+            GameClientId = gameClientId ?? string.Empty,
+        };
+    }
 }
 
 /// <summary>

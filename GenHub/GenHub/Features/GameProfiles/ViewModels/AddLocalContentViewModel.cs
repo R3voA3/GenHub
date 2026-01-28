@@ -556,7 +556,7 @@ public partial class AddLocalContentViewModel(
                     GameType = manifest.TargetGame,
                     InstallationType = GameInstallationType.Unknown,
                     Publisher = manifest.Publisher?.Name ?? "GenHub (Local)",
-                    Version = manifest.Version ?? "1.0.0",
+                    Version = manifest.Version ?? string.Empty,
                     SourceId = SourcePath,
                     IsEnabled = false,
                 };
@@ -775,7 +775,7 @@ public partial class AddLocalContentViewModel(
             GameType = manifest.TargetGame,
             InstallationType = GameInstallationType.Unknown,
             Publisher = manifest.Publisher?.Name ?? "GenHub (Local)",
-            Version = manifest.Version ?? "1.0.0",
+            Version = manifest.Version ?? string.Empty,
             SourceId = SourcePath,
             IsEnabled = false,
         };

@@ -8,13 +8,13 @@ namespace GenHub.Core.Models.Common;
 public class UserSettings : ICloneable
 {
     /// <summary>Gets or sets the application theme preference.</summary>
-    public string? Theme { get; set; }
+    public string? Theme { get; set; } = GenHub.Core.Constants.AppConstants.DefaultThemeName;
 
     /// <summary>Gets or sets the main window width in pixels.</summary>
-    public double WindowWidth { get; set; }
+    public double WindowWidth { get; set; } = GenHub.Core.Constants.UiConstants.DefaultWindowWidth;
 
     /// <summary>Gets or sets the main window height in pixels.</summary>
-    public double WindowHeight { get; set; }
+    public double WindowHeight { get; set; } = GenHub.Core.Constants.UiConstants.DefaultWindowHeight;
 
     /// <summary>Gets or sets a value indicating whether the main window is maximized.</summary>
     public bool IsMaximized { get; set; }
@@ -26,16 +26,16 @@ public class UserSettings : ICloneable
     public string? LastUsedProfileId { get; set; }
 
     /// <summary>Gets or sets the last selected navigation tab.</summary>
-    public NavigationTab LastSelectedTab { get; set; }
+    public NavigationTab LastSelectedTab { get; set; } = NavigationTab.Home;
 
     /// <summary>Gets or sets the maximum number of concurrent downloads allowed.</summary>
-    public int MaxConcurrentDownloads { get; set; }
+    public int MaxConcurrentDownloads { get; set; } = GenHub.Core.Constants.DownloadDefaults.MaxConcurrentDownloads;
 
     /// <summary>Gets or sets a value indicating whether downloads are allowed to continue in the background.</summary>
-    public bool AllowBackgroundDownloads { get; set; }
+    public bool AllowBackgroundDownloads { get; set; } = true;
 
     /// <summary>Gets or sets a value indicating whether to automatically check for updates on startup.</summary>
-    public bool AutoCheckForUpdatesOnStartup { get; set; }
+    public bool AutoCheckForUpdatesOnStartup { get; set; } = true;
 
     /// <summary>Gets or sets the timestamp of the last update check in ISO 8601 format.</summary>
     public string? LastUpdateCheckTimestamp { get; set; }
@@ -44,16 +44,16 @@ public class UserSettings : ICloneable
     public bool EnableDetailedLogging { get; set; }
 
     /// <summary>Gets or sets the default workspace strategy for new profiles.</summary>
-    public WorkspaceStrategy DefaultWorkspaceStrategy { get; set; }
+    public WorkspaceStrategy DefaultWorkspaceStrategy { get; set; } = GenHub.Core.Constants.WorkspaceConstants.DefaultWorkspaceStrategy;
 
     /// <summary>Gets or sets the buffer size (in bytes) for file download operations.</summary>
-    public int DownloadBufferSize { get; set; }
+    public int DownloadBufferSize { get; set; } = GenHub.Core.Constants.DownloadDefaults.BufferSizeBytes;
 
     /// <summary>Gets or sets the download timeout in seconds.</summary>
-    public int DownloadTimeoutSeconds { get; set; }
+    public int DownloadTimeoutSeconds { get; set; } = GenHub.Core.Constants.DownloadDefaults.TimeoutSeconds;
 
     /// <summary>Gets or sets the user-agent string for downloads.</summary>
-    public string? DownloadUserAgent { get; set; }
+    public string? DownloadUserAgent { get; set; } = GenHub.Core.Constants.ApiConstants.DefaultUserAgent;
 
     /// <summary>Gets or sets the custom settings file path. If null or empty, use platform default.</summary>
     public string? SettingsFilePath { get; set; }
@@ -338,10 +338,7 @@ public class UserSettings : ICloneable
         subscription.RecordInstallation(version);
 
         // Clear from legacy dictionary as well
-        if (SkippedUpdateVersions.ContainsKey(publisherId))
-        {
-            SkippedUpdateVersions.Remove(publisherId);
-        }
+        SkippedUpdateVersions.Remove(publisherId);
     }
 
     /// <summary>
@@ -390,7 +387,7 @@ public class UserSettings : ICloneable
     /// <returns>A list of active publisher subscriptions.</returns>
     public List<PublisherSubscription> GetActiveSubscriptions()
     {
-        return PublisherSubscriptions.Where(s => s.IsActive).ToList();
+        return [.. PublisherSubscriptions.Where(s => s.IsActive)];
     }
 
     /// <summary>
@@ -399,7 +396,7 @@ public class UserSettings : ICloneable
     /// <returns>A list of publisher subscriptions with skipped versions.</returns>
     public List<PublisherSubscription> GetSkippedVersions()
     {
-        return PublisherSubscriptions.Where(s => s.HasSkippedVersion).ToList();
+        return [.. PublisherSubscriptions.Where(s => s.HasSkippedVersion)];
     }
 
     /// <summary>

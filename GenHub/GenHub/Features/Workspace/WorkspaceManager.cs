@@ -78,25 +78,44 @@ public class WorkspaceManager(
                             "[Workspace] Strategy matches ({Strategy}), checking manifests and file counts...",
                             workspace.Strategy);
 
-                        // Check if manifest IDs have changed
-                        var currentManifestIds = (configuration.Manifests ?? [])
-                            .Select(m => m.Id.Value)
-                            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                        // Check if manifest IDs or versions have changed
+                        var currentManifests = (configuration.Manifests ?? [])
+                            .Select(m => new { m.Id, Version = m.Version ?? string.Empty })
+                            .OrderBy(m => m.Id.Value, StringComparer.OrdinalIgnoreCase)
                             .ToList();
+
+                        var currentManifestIds = currentManifests.Select(m => m.Id.Value).ToList();
                         var cachedManifestIds = (workspace.ManifestIds ?? [])
                             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
                             .ToList();
 
                         var manifestsChanged = !currentManifestIds.SequenceEqual(cachedManifestIds, StringComparer.OrdinalIgnoreCase);
+
+                        // If IDs match, check versions (crucial for local content where ID is static)
+                        if (!manifestsChanged)
+                        {
+                            var currentVersions = currentManifests.ToDictionary(m => m.Id.Value, m => m.Version);
+                            var cachedVersions = workspace.ManifestVersions ?? [];
+
+                            foreach (var (id, version) in currentVersions)
+                            {
+                                if (!cachedVersions.TryGetValue(id, out var cachedVersion) || cachedVersion != version)
+                                {
+                                    manifestsChanged = true;
+                                    logger.LogInformation(
+                                        "[Workspace] Manifest version changed for {Id} - cached: '{Cached}', current: '{Current}'. Workspace will be recreated.",
+                                        id,
+                                        cachedVersion ?? "(none)",
+                                        version);
+                                    break;
+                                }
+                            }
+                        }
+
                         if (manifestsChanged)
                         {
                             // Force recreation to ensure any orphaned files from the previous version are removed
                             configuration.ForceRecreate = true;
-                            Console.Out.WriteLine($"[DEBUG] Manifests changed! ForceRecreate set to true. Cached: {string.Join(",", cachedManifestIds)}, Current: {string.Join(",", currentManifestIds)}");
-                            logger.LogWarning(
-                                "[Workspace] Manifest IDs have changed - cached: [{Cached}], current: [{Current}]. Workspace will be recreated.",
-                                string.Join(", ", cachedManifestIds),
-                                string.Join(", ", currentManifestIds));
 
                             // Fall through to recreate
                         }
@@ -127,6 +146,7 @@ public class WorkspaceManager(
                                     "[Workspace] Workspace {Id} validation failed, will recreate",
                                     configuration.Id);
                                 Console.Out.WriteLine($"[DEBUG] Workspace {configuration.Id} validation failed, will recreate.");
+
                                 // Fall through to recreate
                             }
                             else if (cachedFileCount > 0 || Directory.Exists(workspace.WorkspacePath))
@@ -233,8 +253,10 @@ public class WorkspaceManager(
             logger.LogDebug("[Workspace] Post-preparation validation passed");
         }
 
-        // Store manifest IDs for future reuse comparison
+        // Store manifest IDs and versions for future reuse comparison
         workspaceInfo.ManifestIds = [.. (configuration.Manifests ?? []).Select(m => m.Id.Value)];
+        workspaceInfo.ManifestVersions = (configuration.Manifests ?? [])
+            .ToDictionary(m => m.Id.Value, m => m.Version ?? string.Empty);
 
         logger.LogDebug("[Workspace] Saving workspace metadata");
         await SaveWorkspaceMetadataAsync(workspaceInfo, cancellationToken);

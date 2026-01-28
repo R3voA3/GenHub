@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.GameProfiles;
 using GenHub.Core.Models.Enums;
@@ -50,7 +51,11 @@ public class GameProfile : IGameProfile
     /// </summary>
     public bool IsToolProfile => !string.IsNullOrWhiteSpace(ToolContentId);
 
-    /// <summary>Gets or sets the workspace strategy for this profile.</summary>
+    /// <summary>
+    /// Gets or sets the workspace strategy for this profile.
+    /// Uses a custom JSON converter to ensure the default is HardLink instead of SymlinkOnly.
+    /// </summary>
+    [JsonConverter(typeof(WorkspaceStrategyJsonConverter))]
     public WorkspaceStrategy WorkspaceStrategy { get; set; } = WorkspaceConstants.DefaultWorkspaceStrategy;
 
     /// <summary>Gets the preferred workspace strategy for this profile.</summary>

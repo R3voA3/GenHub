@@ -404,11 +404,11 @@ public class ProfileLauncherFacade(
                     logger.LogWarning(
                         "[Launch] Community Outpost reconciliation failed: {Error}",
                         reconcileResult.FirstError);
+
                     // Usually we don't fail launch for this provider as online play isn't strictly enforced
                 }
                 else if (reconcileResult.Data)
                 {
-
                     // Profile was updated, reload it
                     logger.LogInformation("[Launch] Profile was updated by Community Outpost reconciliation, reloading");
                     profileResult = await profileManager.GetProfileAsync(profileId, cancellationToken);
@@ -559,6 +559,43 @@ public class ProfileLauncherFacade(
                 "=== LAUNCH SUCCESS: Profile {ProfileId}, ProcessId {ProcessId} ===",
                 profileId,
                 launchInfo.ProcessInfo.ProcessId);
+
+            // Persist the ActiveWorkspaceId to the profile repository
+            // This is critical for ContentReconciliationService to find and invalidate this workspace
+            // if any of its content changes later.
+            if (!string.IsNullOrEmpty(launchInfo.WorkspaceId) && launchInfo.WorkspaceId != profile.ActiveWorkspaceId)
+            {
+                var updateRequest = new UpdateProfileRequest
+                {
+                    ActiveWorkspaceId = launchInfo.WorkspaceId,
+                };
+
+                try
+                {
+                    var updateResult = await profileManager.UpdateProfileAsync(profileId, updateRequest, cancellationToken);
+                    if (updateResult.Success)
+                    {
+                        logger.LogInformation(
+                            "Persisted active workspace ID '{WorkspaceId}' to profile '{ProfileId}'",
+                            launchInfo.WorkspaceId,
+                            profileId);
+                    }
+                    else
+                    {
+                        logger.LogWarning(
+                            "Failed to persist active workspace ID to profile '{ProfileId}': {Error}",
+                            profileId,
+                            updateResult.FirstError);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Exception while persisting active workspace ID for profile '{ProfileId}'",
+                        profileId);
+                }
+            }
 
             return ProfileOperationResult<GameLaunchInfo>.CreateSuccess(launchInfo);
         }

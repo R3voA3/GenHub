@@ -320,6 +320,36 @@ public class ProfileContentLoader(
         }
     }
 
+    /// <inheritdoc/>
+    public ContentDisplayItem CreateManifestDisplayItem(
+        ContentManifest manifest,
+        string? sourceId = null,
+        string? gameClientId = null,
+        bool isEnabled = false)
+    {
+        // Suppress version display for local content - NEVER show version for local content
+        var isLocal = manifest.Publisher?.PublisherType?.Equals("local", StringComparison.OrdinalIgnoreCase) == true;
+        var normalizedVersion = isLocal ? string.Empty : displayFormatter.NormalizeVersion(manifest.Version);
+        var displayName = manifest.ContentType == ContentType.GameInstallation
+            ? displayFormatter.BuildDisplayName(manifest.TargetGame, normalizedVersion)
+            : displayFormatter.BuildDisplayName(manifest.TargetGame, normalizedVersion, manifest.Name);
+
+        return new ContentDisplayItem
+        {
+            Id = manifest.Id.Value,
+            ManifestId = manifest.Id.Value,
+            DisplayName = displayName,
+            Version = normalizedVersion,
+            ContentType = manifest.ContentType,
+            GameType = manifest.TargetGame,
+            InstallationType = displayFormatter.GetInstallationTypeFromManifest(manifest),
+            Publisher = displayFormatter.GetPublisherFromManifest(manifest),
+            SourceId = sourceId ?? string.Empty,
+            GameClientId = gameClientId ?? string.Empty,
+            IsEnabled = isEnabled,
+        };
+    }
+
     private static GameClient? GetBaseGameClient(GameInstallation installation, GameType gameType)
     {
         return installation.AvailableGameClients
@@ -440,33 +470,6 @@ public class ProfileContentLoader(
             InstallationType = installation.InstallationType,
             Publisher = publisher,
             Version = normalizedVersion,
-            IsEnabled = isEnabled,
-        };
-    }
-
-    private ContentDisplayItem CreateManifestDisplayItem(
-        ContentManifest manifest,
-        string? sourceId = null,
-        string? gameClientId = null,
-        bool isEnabled = false)
-    {
-        var normalizedVersion = displayFormatter.NormalizeVersion(manifest.Version);
-        var displayName = manifest.ContentType == ContentType.GameInstallation
-            ? displayFormatter.BuildDisplayName(manifest.TargetGame, normalizedVersion)
-            : displayFormatter.BuildDisplayName(manifest.TargetGame, normalizedVersion, manifest.Name);
-
-        return new ContentDisplayItem
-        {
-            Id = manifest.Id.Value,
-            ManifestId = manifest.Id.Value,
-            DisplayName = displayName,
-            Version = normalizedVersion,
-            ContentType = manifest.ContentType,
-            GameType = manifest.TargetGame,
-            InstallationType = displayFormatter.GetInstallationTypeFromManifest(manifest),
-            Publisher = displayFormatter.GetPublisherFromManifest(manifest),
-            SourceId = sourceId ?? string.Empty,
-            GameClientId = gameClientId ?? string.Empty,
             IsEnabled = isEnabled,
         };
     }

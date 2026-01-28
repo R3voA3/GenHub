@@ -99,6 +99,11 @@ public class ContentReconciliationService(
                             InstallationId = profile.GameClient.InstallationId, // Preserve installation link
                         };
                     }
+                    else
+                    {
+                        logger.LogError("Failed to resolve new game client manifest '{NewId}' for profile '{ProfileName}'. Skipping update to prevent corruption.", newClientId, profile.Name);
+                        continue;
+                    }
                 }
 
                 // Clear workspace to force launch-time sync
@@ -130,6 +135,11 @@ public class ContentReconciliationService(
             {
                 logger.LogError(ex, "Error reconciling profile '{ProfileName}'", profile.Name);
             }
+        }
+
+        foreach (var replacement in replacements)
+        {
+            WeakReferenceMessenger.Default.Send(new ManifestReplacedMessage(replacement.Key, replacement.Value));
         }
 
         logger.LogInformation("Bulk reconciliation complete. Updated {Count} profiles.", updatedCount);
@@ -213,6 +223,10 @@ public class ContentReconciliationService(
             // 2. Reconcile Profiles
             if (idChanged)
             {
+                // Ensure the new manifest is available in the pool before attempting reconciliation
+                // This prevents race conditions where GetManifestAsync fails to find the just-created manifest
+                await manifestPool.AddManifestAsync(newManifest, cancellationToken);
+
                 await ReconcileManifestReplacementAsync(oldId, newId, cancellationToken);
             }
             else

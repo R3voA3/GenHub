@@ -139,6 +139,10 @@ public class LocalContentService(
             var typeString = contentType.ToString().ToLowerInvariant();
             manifest.Id = $"1.0.{LocalPublisherType}.{typeString}.{sanitizedName}";
 
+            // Set a dynamic version string based on current time to ensure
+            // WorkspaceManager detects changes even if the name/ID remains the same.
+            manifest.Version = DateTime.UtcNow.ToString("yyyyMMdd.HHmmss");
+
             logger.LogInformation(
                 "Created local content manifest with ID '{Id}' for '{Name}'",
                 manifest.Id,

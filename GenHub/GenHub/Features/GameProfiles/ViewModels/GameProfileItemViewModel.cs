@@ -423,7 +423,10 @@ public partial class GameProfileItemViewModel : ViewModelBase
                 ExtractManifestInfo(gameProfile.GameClient.Id);
 
                 // Fallback: use GameClient.Version directly if we couldn't extract from manifest
-                if (string.IsNullOrEmpty(_gameVersion) && !string.IsNullOrEmpty(gameProfile.GameClient.Version))
+                // But SKIP if the publisher is "Local" - we want NO version for local content
+                if (string.IsNullOrEmpty(_gameVersion) &&
+                    !string.IsNullOrEmpty(gameProfile.GameClient.Version) &&
+                    !string.Equals(_publisher, "Local", StringComparison.OrdinalIgnoreCase))
                 {
                     // Normalize version to handle Unknown, Auto-Updated, and Automatically added cases
                     var version = gameProfile.GameClient.Version;
@@ -432,6 +435,9 @@ public partial class GameProfileItemViewModel : ViewModelBase
                         version.Equals("Auto-Updated", StringComparison.OrdinalIgnoreCase) ||
                         version.Contains("Automatically", StringComparison.OrdinalIgnoreCase) ||
                         version == "0" ||
+                        version == "0.0" ||
+                        version == "0.0.0" ||
+                        version == "0.0.0.0" ||
                         version.Equals("v0", StringComparison.OrdinalIgnoreCase))
                     {
                         GameVersion = string.Empty;
@@ -587,7 +593,10 @@ public partial class GameProfileItemViewModel : ViewModelBase
                 ExtractManifestInfo(gameProfile.GameClient.Id);
 
                 // Fallback: use GameClient.Version directly
-                if (string.IsNullOrEmpty(GameVersion) && !string.IsNullOrEmpty(gameProfile.GameClient.Version))
+                // But SKIP if the publisher is "Local"
+                if (string.IsNullOrEmpty(GameVersion) &&
+                    !string.IsNullOrEmpty(gameProfile.GameClient.Version) &&
+                    !string.Equals(Publisher, "Local", StringComparison.OrdinalIgnoreCase))
                 {
                     var version = gameProfile.GameClient.Version;
                     if (version.Equals(GameClientConstants.AutoDetectedVersion, StringComparison.OrdinalIgnoreCase) ||
@@ -595,6 +604,9 @@ public partial class GameProfileItemViewModel : ViewModelBase
                         version.Equals("Auto-Updated", StringComparison.OrdinalIgnoreCase) ||
                         version.Contains("Automatically", StringComparison.OrdinalIgnoreCase) ||
                         version == "0" ||
+                        version == "0.0" ||
+                        version == "0.0.0" ||
+                        version == "0.0.0.0" ||
                         version.Equals("v0", StringComparison.OrdinalIgnoreCase))
                     {
                         GameVersion = string.Empty;
@@ -624,74 +636,18 @@ public partial class GameProfileItemViewModel : ViewModelBase
         OnPropertyChanged(nameof(CommandLineArguments));
     }
 
-    private void UpdateDescription(GameProfile gameProfile)
+    private static string GetPublisherNameFromId(string manifestId)
     {
-        // Use actual profile description if available
-        if (!string.IsNullOrEmpty(gameProfile.Description))
+        if (string.IsNullOrEmpty(manifestId))
         {
-            Description = gameProfile.Description;
-            return;
+            return string.Empty;
         }
 
-        // 1. Extract Installation Source
-        string installationSource = string.Empty;
-
-        // Try to get from GameInstallationId first (it might be a manifest ID)
-        if (!string.IsNullOrEmpty(gameProfile.GameInstallationId))
-        {
-            installationSource = GetPublisherNameFromId(gameProfile.GameInstallationId);
-        }
-
-        // If that failed or looked generic, try enabled content
-        if (string.IsNullOrEmpty(installationSource) || installationSource == "Available" || installationSource == "Unknown")
-        {
-            var installManifestId = gameProfile.EnabledContentIds?.FirstOrDefault(id => id.Contains("-installation"));
-            if (!string.IsNullOrEmpty(installManifestId))
-            {
-                installationSource = GetPublisherNameFromId(installManifestId);
-            }
-        }
-
-        if (string.IsNullOrEmpty(installationSource))
-        {
-            // Fallback to internal checking
-            installationSource = IsSteamInstallation ? "Steam" : "PC";
-        }
-
-        // 2. Content Info (_publisher and _gameVersion are set by ExtractManifestInfo called earlier)
-        var contentPublisher = Publisher;
-        var version = GameVersion;
-
-        // 3. Construct Badge/Description
-        // Format: "Steam • 1.04 • Generals" or "Steam • 20241010 • Generals Online"
-        var parts = new System.Collections.Generic.List<string>();
-
-        if (!string.IsNullOrEmpty(installationSource)) parts.Add(installationSource);
-        if (!string.IsNullOrEmpty(version)) parts.Add(version);
-
-        // Only add publisher if it's different from installation source (don't say "Steam • 1.04 • Steam")
-        // And if it's not generic "Generals" if we already have context?
-        // User asked for "Generals Online" specifically.
-        if (!string.IsNullOrEmpty(contentPublisher) &&
-            !string.Equals(contentPublisher, installationSource, StringComparison.OrdinalIgnoreCase))
-        {
-            parts.Add(contentPublisher);
-        }
-
-        // If publisher is missing, maybe add Game Type?
-        else if (string.IsNullOrEmpty(contentPublisher))
-        {
-            parts.Add(GetFriendlyGameTypeName(gameProfile.GameClient?.GameType));
-        }
-
-        Description = string.Join(" • ", parts);
-    }
-
-    private string GetPublisherNameFromId(string manifestId)
-    {
-        if (string.IsNullOrEmpty(manifestId)) return string.Empty;
         var segments = manifestId.Split('.');
-        if (segments.Length < 3) return string.Empty;
+        if (segments.Length < 3)
+        {
+            return string.Empty;
+        }
 
         var publisher = segments[2].ToLowerInvariant();
         return publisher switch
@@ -766,7 +722,9 @@ public partial class GameProfileItemViewModel : ViewModelBase
     private static string NormalizeCoverPath(string coverPath)
     {
         if (string.IsNullOrEmpty(coverPath))
+        {
             return coverPath;
+        }
 
         // Map old paths to new paths for backward compatibility
         // Images were renamed/moved: Assets/Images/china-poster.png → Assets/Covers/china-cover.png
@@ -788,6 +746,69 @@ public partial class GameProfileItemViewModel : ViewModelBase
                 p.Replace("/Assets/Images/", "/Assets/Covers/", StringComparison.OrdinalIgnoreCase),
             _ => coverPath,
         };
+    }
+
+    private void UpdateDescription(GameProfile gameProfile)
+    {
+        // Use actual profile description if available
+        if (!string.IsNullOrEmpty(gameProfile.Description))
+        {
+            Description = gameProfile.Description;
+            return;
+        }
+
+        // 1. Extract Installation Source
+        string installationSource = string.Empty;
+
+        // Try to get from GameInstallationId first (it might be a manifest ID)
+        if (!string.IsNullOrEmpty(gameProfile.GameInstallationId))
+        {
+            installationSource = GetPublisherNameFromId(gameProfile.GameInstallationId);
+        }
+
+        // If that failed or looked generic, try enabled content
+        if (string.IsNullOrEmpty(installationSource) || installationSource == "Available" || installationSource == "Unknown")
+        {
+            var installManifestId = gameProfile.EnabledContentIds?.FirstOrDefault(id => id.Contains("-installation"));
+            if (!string.IsNullOrEmpty(installManifestId))
+            {
+                installationSource = GetPublisherNameFromId(installManifestId);
+            }
+        }
+
+        if (string.IsNullOrEmpty(installationSource))
+        {
+            // Fallback to internal checking
+            installationSource = IsSteamInstallation ? "Steam" : "PC";
+        }
+
+        // 2. Content Info (_publisher and _gameVersion are set by ExtractManifestInfo called earlier)
+        var contentPublisher = Publisher;
+        var version = GameVersion;
+
+        // 3. Construct Badge/Description
+        // Format: "Steam • 1.04 • Generals" or "Steam • 20241010 • Generals Online"
+        var parts = new System.Collections.Generic.List<string>();
+
+        if (!string.IsNullOrEmpty(installationSource)) parts.Add(installationSource);
+        if (!string.IsNullOrEmpty(version)) parts.Add(version);
+
+        // Only add publisher if it's different from installation source (don't say "Steam • 1.04 • Steam")
+        // And if it's not generic "Generals" if we already have context?
+        // User asked for "Generals Online" specifically.
+        if (!string.IsNullOrEmpty(contentPublisher) &&
+            !string.Equals(contentPublisher, installationSource, StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add(contentPublisher);
+        }
+
+        // If publisher is missing, maybe add Game Type?
+        else if (string.IsNullOrEmpty(contentPublisher))
+        {
+            parts.Add(GetFriendlyGameTypeName(gameProfile.GameClient?.GameType));
+        }
+
+        Description = string.Join(" • ", parts);
     }
 
     /// <summary>

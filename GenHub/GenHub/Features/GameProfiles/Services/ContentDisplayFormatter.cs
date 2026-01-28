@@ -27,7 +27,11 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
     {
         var publisher = GetPublisherFromManifest(manifest);
         var installationType = GetInstallationTypeFromManifest(manifest);
-        var normalizedVersion = NormalizeVersion(manifest.Version);
+
+        // Suppress version display for local content to reduce UI clutter
+        var isLocal = manifest.Publisher?.PublisherType?.Equals("local", StringComparison.OrdinalIgnoreCase) == true;
+        var normalizedVersion = isLocal ? string.Empty : NormalizeVersion(manifest.Version);
+
         var displayName = BuildDisplayName(manifest.TargetGame, normalizedVersion, manifest.Name);
 
         return new ContentDisplayItem
@@ -103,6 +107,12 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
             return string.Empty;
         }
 
+        // Handle zero versions (local content) - return empty string
+        if (trimmedVersion == "0" || trimmedVersion == "0.0" || trimmedVersion == "0.0.0" || trimmedVersion == "0.0.0.0")
+        {
+            return string.Empty;
+        }
+
         // Try to resolve hash-based versions (e.g., from GameClientHashRegistry)
         var (detectedGameType, hashVersion) = hashRegistry.GetGameInfoFromHash(trimmedVersion);
         if (detectedGameType != GameType.Unknown && !string.IsNullOrEmpty(hashVersion))
@@ -113,7 +123,7 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
         // Remove 'v' prefix if present (case-insensitive)
         if (trimmedVersion.StartsWith(VersionPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return trimmedVersion.Substring(VersionPrefix.Length).Trim();
+            return trimmedVersion[VersionPrefix.Length..].Trim();
         }
 
         return trimmedVersion;
