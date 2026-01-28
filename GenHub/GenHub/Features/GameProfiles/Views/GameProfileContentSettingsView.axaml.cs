@@ -1,11 +1,8 @@
-using System;
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
-using GenHub.Features.GameProfiles.ViewModels;
 
 namespace GenHub.Features.GameProfiles.Views;
 
@@ -15,7 +12,7 @@ namespace GenHub.Features.GameProfiles.Views;
 public partial class GameProfileContentSettingsView : UserControl
 {
     private readonly Dictionary<string, Control> _sections = [];
-    private ScrollViewer? _scrollViewer;
+    private readonly ScrollViewer? _scrollViewer;
     private bool _isScrollingProgrammatically;
 
     /// <summary>
@@ -33,25 +30,6 @@ public partial class GameProfileContentSettingsView : UserControl
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
-
-        _scrollViewer = this.FindControl<ScrollViewer>("ContentSettingsScrollViewer");
-        if (_scrollViewer == null)
-        {
-            return;
-        }
-
-        // Map section names to controls
-        MapSection("SelectionSection");
-        MapSection("DiscoverySection");
-
-        if (DataContext is GameProfileSettingsViewModel vm)
-        {
-            // Subscribe to ViewModel scroll requests
-            vm.ScrollToSectionRequested = OnScrollToSectionRequested;
-
-            // Subscribe to ScrollViewer changes for Spy logic
-            _scrollViewer.ScrollChanged += OnScrollChanged;
-        }
     }
 
     /// <summary>
@@ -61,15 +39,6 @@ public partial class GameProfileContentSettingsView : UserControl
     protected override void OnUnloaded(RoutedEventArgs e)
     {
         base.OnUnloaded(e);
-        if (_scrollViewer != null)
-        {
-            _scrollViewer.ScrollChanged -= OnScrollChanged;
-        }
-
-        if (DataContext is GameProfileSettingsViewModel vm)
-        {
-            vm.ScrollToSectionRequested = null;
-        }
     }
 
     private void MapSection(string name)

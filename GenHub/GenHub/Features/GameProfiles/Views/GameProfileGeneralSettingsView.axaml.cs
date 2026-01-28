@@ -53,8 +53,8 @@ public partial class GameProfileGeneralSettingsView : UserControl
 
         if (DataContext is GameProfileSettingsViewModel vm)
         {
-            // Subscribe to ViewModel scroll requests
-            vm.ScrollToSectionRequested = OnScrollToSectionRequested;
+            // Add our handler to the multicast delegate (don't replace other views' handlers)
+            vm.ScrollToSectionRequested += OnScrollToSectionRequested;
 
             // Subscribe to ScrollViewer changes for Spy logic
             _scrollViewer.ScrollChanged += OnScrollChanged;
@@ -68,6 +68,7 @@ public partial class GameProfileGeneralSettingsView : UserControl
     protected override void OnUnloaded(RoutedEventArgs e)
     {
         base.OnUnloaded(e);
+
         if (_scrollViewer != null)
         {
             _scrollViewer.ScrollChanged -= OnScrollChanged;
@@ -75,7 +76,8 @@ public partial class GameProfileGeneralSettingsView : UserControl
 
         if (DataContext is GameProfileSettingsViewModel vm)
         {
-            vm.ScrollToSectionRequested = null;
+            // Remove our handler from the multicast delegate
+            vm.ScrollToSectionRequested -= OnScrollToSectionRequested;
         }
     }
 

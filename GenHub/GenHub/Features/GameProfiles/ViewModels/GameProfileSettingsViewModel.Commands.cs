@@ -38,6 +38,15 @@ public partial class GameProfileSettingsViewModel
     }
 
     /// <summary>
+    /// Updates the selected content editor category from the scroll spy without triggering a scroll request.
+    /// </summary>
+    /// <param name="category">The new active category.</param>
+    public void UpdateContentEditorCategoryFromScroll(ContentEditorCategory category)
+    {
+        SelectedContentEditorCategory = category;
+    }
+
+    /// <summary>
     /// Loads the available content items based on current filters.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -129,6 +138,22 @@ public partial class GameProfileSettingsViewModel
     {
         SelectedContentCategory = category;
         ScrollToSectionRequested?.Invoke(category.ToString() + "Section");
+    }
+
+    [RelayCommand]
+    private void SelectContentEditorCategory(ContentEditorCategory category)
+    {
+        System.Diagnostics.Debug.WriteLine($"[ViewModel] SelectContentEditorCategory called with category: {category}");
+        System.Diagnostics.Debug.WriteLine($"[ViewModel] ScrollToSectionRequested is null: {ScrollToSectionRequested == null}");
+
+        SelectedContentEditorCategory = category;
+
+        var sectionName = category.ToString() + "Section";
+        System.Diagnostics.Debug.WriteLine($"[ViewModel] Invoking ScrollToSectionRequested with: {sectionName}");
+
+        ScrollToSectionRequested?.Invoke(sectionName);
+
+        System.Diagnostics.Debug.WriteLine($"[ViewModel] ScrollToSectionRequested invoked");
     }
 
     [RelayCommand]
