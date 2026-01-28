@@ -49,7 +49,6 @@ public class GameProfileLauncherViewModelTests
                 null,
                 new Mock<IContentStorageService>().Object,
                 null, // ILocalContentService
-                null, // ILocalContentProfileReconciler
                 NullLogger<GameProfileSettingsViewModel>.Instance,
                 NullLogger<GameSettingsViewModel>.Instance),
             new Mock<IProfileEditorFacade>().Object,
@@ -94,7 +93,6 @@ public class GameProfileLauncherViewModelTests
                 null,
                 new Mock<IContentStorageService>().Object,
                 null, // ILocalContentService
-                null, // ILocalContentProfileReconciler
                 NullLogger<GameProfileSettingsViewModel>.Instance,
                 NullLogger<GameSettingsViewModel>.Instance),
             new Mock<IProfileEditorFacade>().Object,

@@ -13,6 +13,11 @@ public record ContentRemovalResult
     public int ProfilesUpdated { get; init; }
 
     /// <summary>
+    /// Gets the number of workspaces invalidated due to content removal.
+    /// </summary>
+    public int WorkspacesInvalidated { get; init; }
+
+    /// <summary>
     /// Gets the number of manifests removed from the pool.
     /// </summary>
     public int ManifestsRemoved { get; init; }

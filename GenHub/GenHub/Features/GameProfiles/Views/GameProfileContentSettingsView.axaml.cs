@@ -12,7 +12,7 @@ namespace GenHub.Features.GameProfiles.Views;
 public partial class GameProfileContentSettingsView : UserControl
 {
     private readonly Dictionary<string, Control> _sections = [];
-    private readonly ScrollViewer? _scrollViewer;
+    private ScrollViewer? _scrollViewer;
     private bool _isScrollingProgrammatically;
 
     /// <summary>
@@ -30,6 +30,7 @@ public partial class GameProfileContentSettingsView : UserControl
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
+        _scrollViewer = this.FindControl<ScrollViewer>("ContentSettingsScrollViewer");
     }
 
     /// <summary>

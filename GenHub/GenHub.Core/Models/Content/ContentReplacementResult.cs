@@ -14,6 +14,11 @@ public record ContentReplacementResult
     public int ProfilesUpdated { get; init; }
 
     /// <summary>
+    /// Gets the number of workspaces invalidated due to content changes.
+    /// </summary>
+    public int WorkspacesInvalidated { get; init; }
+
+    /// <summary>
     /// Gets the number of old manifests removed from the pool.
     /// </summary>
     public int ManifestsRemoved { get; init; }

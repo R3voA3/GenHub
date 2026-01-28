@@ -8,9 +8,9 @@
              x:Class="GenHub.Features.Notifications.Views.NotificationContainerView"
              x:DataType="vm:NotificationManagerViewModel">
 
-    <!-- ItemsControl with explicit Width to prevent parent layout distortion -->
+    <!-- ItemsControl with MaxWidth/MaxHeight constraints to prevent parent layout distortion -->
     <ItemsControl ItemsSource="{Binding ActiveNotifications}"
-                  Width="400"
+                  MaxWidth="400"
                   MaxHeight="600"
                   HorizontalAlignment="Right"
                   VerticalAlignment="Top"

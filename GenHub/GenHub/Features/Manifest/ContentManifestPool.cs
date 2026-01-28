@@ -9,11 +9,11 @@ using System.Threading.Tasks;
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.Manifest;
+using GenHub.Core.Interfaces.Storage;
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
-using GenHub.Features.Storage.Services;
 using Microsoft.Extensions.Logging;
 
 namespace GenHub.Features.Manifest;
@@ -26,7 +26,7 @@ namespace GenHub.Features.Manifest;
 /// <param name="logger">The logger instance.</param>
 public class ContentManifestPool(
     IContentStorageService storageService,
-    CasReferenceTracker referenceTracker,
+    ICasReferenceTracker referenceTracker,
     ILogger<ContentManifestPool> logger) : IContentManifestPool
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -64,7 +64,26 @@ public class ContentManifestPool(
             await File.WriteAllTextAsync(manifestPath, manifestJson, cancellationToken);
 
             // Ensure CAS references are tracked even for metadata-only updates
-            await referenceTracker.TrackManifestReferencesAsync(manifest.Id, manifest, cancellationToken);
+            var trackResult = await referenceTracker.TrackManifestReferencesAsync(manifest.Id, manifest, cancellationToken);
+            if (!trackResult.Success)
+            {
+                logger.LogError("Failed to track CAS references for manifest {ManifestId}: {Error}. Rolling back manifest.", manifest.Id, trackResult.FirstError);
+
+                // Rollback: Delete metadata file
+                if (File.Exists(manifestPath))
+                {
+                    File.Delete(manifestPath);
+                }
+
+                // Rollback: Remove stored content to prevent orphans
+                var removeResult = await storageService.RemoveContentAsync(manifest.Id, skipUntrack: true, cancellationToken);
+                if (!removeResult.Success)
+                {
+                     logger.LogError("Critical: Failed to rollback content for manifest {ManifestId} after tracking failure: {Error}", manifest.Id, removeResult.FirstError);
+                }
+
+                return OperationResult<bool>.CreateFailure($"Failed to track CAS references: {trackResult.FirstError}");
+            }
 
             logger.LogDebug("Updated manifest {ManifestId} in storage and refreshed CAS tracking", manifest.Id);
             return OperationResult<bool>.CreateSuccess(true);
@@ -218,13 +237,24 @@ public class ContentManifestPool(
     }
 
     /// <inheritdoc/>
-    public async Task<OperationResult<bool>> RemoveManifestAsync(ManifestId manifestId, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<bool>> RemoveManifestAsync(ManifestId manifestId, bool skipUntrack = false, CancellationToken cancellationToken = default)
     {
         try
         {
-            logger.LogInformation("Removing manifest {ManifestId} from pool", manifestId);
+            logger.LogInformation("Removing manifest {ManifestId} from pool (skipUntrack={SkipUntrack})", manifestId, skipUntrack);
 
-            var result = await storageService.RemoveContentAsync(manifestId, cancellationToken);
+            // Untrack CAS references first and check result
+            if (!skipUntrack)
+            {
+                var untrackResult = await referenceTracker.UntrackManifestAsync(manifestId.Value, cancellationToken);
+                if (!untrackResult.Success)
+                {
+                    logger.LogWarning("Failed to untrack CAS references for manifest {ManifestId}: {Error}", manifestId, untrackResult.FirstError);
+                    return OperationResult<bool>.CreateFailure($"Failed to untrack CAS references: {untrackResult.FirstError}");
+                }
+            }
+
+            var result = await storageService.RemoveContentAsync(manifestId, skipUntrack, cancellationToken);
             if (!result.Success)
             {
                 return OperationResult<bool>.CreateFailure($"Failed to remove content for manifest {manifestId}: {result.FirstError}");

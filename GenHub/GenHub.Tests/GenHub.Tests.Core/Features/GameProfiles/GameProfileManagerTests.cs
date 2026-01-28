@@ -456,7 +456,7 @@ public class GameProfileManagerTests
 
         _profileRepositoryMock.Setup(x => x.LoadProfileAsync(profileId, default))
             .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(existingProfile));
-        _profileRepositoryMock.Setup(x => x.SaveProfileAsync(It.Is<GameProfile>(p => p.ActiveWorkspaceId == string.Empty && p.GameClient.Id == "client-2"), default))
+        _profileRepositoryMock.Setup(x => x.SaveProfileAsync(It.Is<GameProfile>(p => p.ActiveWorkspaceId == string.Empty && p.GameClient!.Id == "client-2"), default))
             .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(existingProfile));
 
         // Act
@@ -464,7 +464,7 @@ public class GameProfileManagerTests
 
         // Assert
         Assert.True(result.Success);
-        _profileRepositoryMock.Verify(x => x.SaveProfileAsync(It.Is<GameProfile>(p => p.ActiveWorkspaceId == string.Empty && p.GameClient.Id == "client-2"), default), Times.Once);
+        _profileRepositoryMock.Verify(x => x.SaveProfileAsync(It.Is<GameProfile>(p => p.ActiveWorkspaceId == string.Empty && p.GameClient!.Id == "client-2"), default), Times.Once);
     }
 
     /// <summary>
@@ -563,8 +563,18 @@ public class GameProfileManagerTests
 
         _profileRepositoryMock.Setup(x => x.LoadProfileAsync(profileId, default))
             .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(existingProfile));
+
+        var updatedProfile = new GameProfile
+        {
+            Id = existingProfile.Id,
+            Name = "Updated Name",
+            GameInstallationId = existingProfile.GameInstallationId,
+            GameClient = existingProfile.GameClient,
+            EnabledContentIds = existingProfile.EnabledContentIds,
+        };
+
         _profileRepositoryMock.Setup(x => x.SaveProfileAsync(It.IsAny<GameProfile>(), default))
-            .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(existingProfile));
+            .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(updatedProfile));
 
         ProfileUpdatedMessage? receivedMessage = null;
 

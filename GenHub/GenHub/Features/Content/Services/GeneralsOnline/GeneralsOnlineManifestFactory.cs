@@ -85,7 +85,7 @@ public class GeneralsOnlineManifestFactory(
                 IconUrl = iconUrl,
                 CoverUrl = coverSource,
                 ThemeColor = GeneralsOnlineConstants.ThemeColor,
-                Tags = [.. tags],
+                Tags = [.. tags, .. GetVariantTags(variantSuffix)],
                 ChangelogUrl = release.Changelog,
             },
             Files =
@@ -202,23 +202,8 @@ public class GeneralsOnlineManifestFactory(
         return await UpdateManifestsWithExtractedFiles(manifests, installationPath, cancellationToken);
     }
 
-    /// <summary>
-    /// Parses a Generals Online version string to extract a numeric user version for manifest IDs.
-    /// Converts versions like "111825_QFE2" (Nov 18, 2025) to a numeric value like 1118252.
-    /// NOTE: Format is dictated by Generals Online CDN API (MMDDYY_QFE#), not our choice.
-    /// This method converts it to a sortable numeric format.
-    /// </summary>
-    /// <param name="version">The version string (e.g., "111825_QFE2").</param>
-    /// <returns>A numeric version suitable for manifest IDs.</returns>
     private static int ParseVersionForManifestId(string version) => GameVersionHelper.GetGeneralsOnlineSortableVersion(version);
 
-    /// <summary>
-    /// Creates a ManifestFile for a map file, normalizing the relative path.
-    /// </summary>
-    /// <param name="relativePath">The relative path from the extract directory.</param>
-    /// <param name="fileInfo">The file information.</param>
-    /// <param name="hash">The SHA-256 hash of the file.</param>
-    /// <returns>A ManifestFile configured for user maps directory installation.</returns>
     private static ManifestFile CreateMapManifestFile(string relativePath, FileInfo fileInfo, string hash)
     {
         // For maps, the relative path should be relative to the Maps directory
@@ -240,6 +225,31 @@ public class GeneralsOnlineManifestFactory(
             InstallTarget = ContentInstallTarget.UserMapsDirectory,
             IsExecutable = false,
         };
+    }
+
+    /// <summary>
+    /// Gets variant-specific tags for a given variant suffix.
+    /// </summary>
+    /// <param name="variantSuffix">The variant suffix (e.g., "30hz", "60hz").</param>
+    /// <returns>A list of variant-specific tags.</returns>
+    private static List<string> GetVariantTags(string variantSuffix)
+    {
+        if (variantSuffix.Equals(GeneralsOnlineConstants.Variant30HzSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return [GeneralsOnlineVariantTags.Tag30Hz];
+        }
+
+        if (variantSuffix.Equals(GeneralsOnlineConstants.Variant60HzSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return [GeneralsOnlineVariantTags.Tag60Hz];
+        }
+
+        if (variantSuffix.Equals(GeneralsOnlineConstants.QuickMatchMapPackSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return [GeneralsOnlineVariantTags.TagQuickMatchMaps];
+        }
+
+        return [];
     }
 
     /// <summary>
@@ -284,7 +294,7 @@ public class GeneralsOnlineManifestFactory(
                 ReleaseDate = release.ReleaseDate,
                 IconUrl = iconUrl,
                 ThemeColor = GeneralsOnlineConstants.ThemeColor,
-                Tags = [.. GeneralsOnlineConstants.MapPackTags],
+                Tags = [.. GeneralsOnlineConstants.MapPackTags, .. GetVariantTags(GeneralsOnlineConstants.QuickMatchMapPackSuffix)],
                 ChangelogUrl = release.Changelog,
             },
             Files = [], // Files will be populated during extraction
@@ -350,7 +360,7 @@ public class GeneralsOnlineManifestFactory(
                 ReleaseDate = releaseDate,
                 IconUrl = iconUrl,
                 ThemeColor = GeneralsOnlineConstants.ThemeColor,
-                Tags = [..GeneralsOnlineConstants.Tags],
+                Tags = [.. GeneralsOnlineConstants.Tags, .. GetVariantTags(GeneralsOnlineConstants.Variant30HzSuffix)],
                 ChangelogUrl = changelogUrl,
                 CoverUrl = GeneralsOnlineConstants.CoverSource,
             },
@@ -377,7 +387,7 @@ public class GeneralsOnlineManifestFactory(
                 ReleaseDate = releaseDate,
                 IconUrl = iconUrl,
                 ThemeColor = GeneralsOnlineConstants.ThemeColor,
-                Tags = [..GeneralsOnlineConstants.Tags],
+                Tags = [.. GeneralsOnlineConstants.Tags, .. GetVariantTags(GeneralsOnlineConstants.Variant60HzSuffix)],
                 ChangelogUrl = changelogUrl,
                 CoverUrl = GeneralsOnlineConstants.CoverSource,
             },
@@ -404,7 +414,7 @@ public class GeneralsOnlineManifestFactory(
                 ReleaseDate = releaseDate,
                 IconUrl = iconUrl,
                 ThemeColor = GeneralsOnlineConstants.ThemeColor,
-                Tags = [.. GeneralsOnlineConstants.MapPackTags],
+                Tags = [.. GeneralsOnlineConstants.MapPackTags, .. GetVariantTags(GeneralsOnlineConstants.QuickMatchMapPackSuffix)],
                 ChangelogUrl = changelogUrl,
             },
             Files = [],

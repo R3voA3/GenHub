@@ -17,6 +17,11 @@ public partial class ContentDisplayItem : ObservableObject
     private bool _isEnabled;
 
     /// <summary>
+    /// Gets or sets the unique identifier for this content item.
+    /// </summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the manifest ID.
     /// </summary>
     public required ManifestId ManifestId { get; set; }
@@ -62,7 +67,17 @@ public partial class ContentDisplayItem : ObservableObject
     public string? GameClientId { get; set; }
 
     /// <summary>
+    /// Gets or sets the path to the original content source (for local content).
+    /// </summary>
+    public string? SourcePath { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether this content can be edited (locally created).
     /// </summary>
     public bool IsEditable { get; set; }
+
+    /// <summary>
+    /// Gets or sets the underlying content manifest if available.
+    /// </summary>
+    public ContentManifest? Manifest { get; set; }
 }

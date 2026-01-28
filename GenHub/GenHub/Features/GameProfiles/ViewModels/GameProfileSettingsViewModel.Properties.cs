@@ -115,27 +115,6 @@ public partial class GameProfileSettingsViewModel
     private string _commandLineArguments = string.Empty;
 
     [ObservableProperty]
-    private ObservableCollection<ProfileInfoItem> _availableCovers = [];
-
-    [ObservableProperty]
-    private ProfileInfoItem? _selectedCover;
-
-    [ObservableProperty]
-    private ObservableCollection<ProfileInfoItem> _availableGameClients = [];
-
-    [ObservableProperty]
-    private ProfileInfoItem? _selectedClient;
-
-    [ObservableProperty]
-    private string _formattedSize = string.Empty;
-
-    [ObservableProperty]
-    private string _buildDate = string.Empty;
-
-    [ObservableProperty]
-    private string _sourceType = string.Empty;
-
-    [ObservableProperty]
     private string _shortcutPath = string.Empty;
 
     [ObservableProperty]
@@ -158,24 +137,6 @@ public partial class GameProfileSettingsViewModel
 
     [ObservableProperty]
     private ProfileInfoItem? _selectedProfileInfo;
-
-    [ObservableProperty]
-    private ObservableCollection<ProfileInfoItem> _availableExecutables = [];
-
-    [ObservableProperty]
-    private ProfileInfoItem? _selectedExecutable;
-
-    [ObservableProperty]
-    private bool _isExecutableValid = true;
-
-    [ObservableProperty]
-    private ObservableCollection<ProfileInfoItem> _availableDataPaths = [];
-
-    [ObservableProperty]
-    private ProfileInfoItem? _selectedDataPath;
-
-    [ObservableProperty]
-    private bool _isDataPathValid = true;
 
     [ObservableProperty]
     private bool _runAsAdmin;

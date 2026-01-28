@@ -86,7 +86,7 @@ public class GameClientProfileService(
                 GameClientId = gameClient.Id,
                 GameClient = gameClient,
                 Description = $"Auto-created profile for {installation.InstallationType} {gameClient.Name}",
-                PreferredStrategy = preferredStrategy,
+                WorkspaceStrategy = preferredStrategy,
                 EnabledContentIds = enabledContentIds,
                 ThemeColor = themeColor ?? GetThemeColorForGameType(gameClient.GameType, gameClient),
                 IconPath = !string.IsNullOrEmpty(iconPath) ? iconPath : GetIconPathForGame(gameClient.GameType),
@@ -564,7 +564,7 @@ public class GameClientProfileService(
 
         var profileExists = profilesResult.Data.Any(p =>
             p.Name.Equals(profileName, StringComparison.OrdinalIgnoreCase) &&
-            p.GameInstallationId.Equals(installationId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(p.GameInstallationId, installationId, StringComparison.OrdinalIgnoreCase));
 
         if (profileExists)
         {

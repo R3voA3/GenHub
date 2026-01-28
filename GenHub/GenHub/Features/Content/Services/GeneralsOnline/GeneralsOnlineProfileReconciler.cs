@@ -4,13 +4,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Constants;
+using GenHub.Core.Helpers;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.GameProfiles;
 using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Interfaces.Notifications;
+using GenHub.Core.Interfaces.Storage;
 using GenHub.Core.Models.Content;
-using GenHub.Core.Models.Dialogs;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
@@ -26,7 +27,7 @@ namespace GenHub.Features.Content.Services.GeneralsOnline;
 /// </summary>
 public class GeneralsOnlineProfileReconciler(
     ILogger<GeneralsOnlineProfileReconciler> logger,
-    GeneralsOnlineUpdateService updateService,
+    IGeneralsOnlineUpdateService updateService,
     IContentManifestPool manifestPool,
     IContentOrchestrator contentOrchestrator,
     IContentReconciliationService reconciliationService,
@@ -67,23 +68,18 @@ public class GeneralsOnlineProfileReconciler(
                 return OperationResult<bool>.CreateSuccess(false);
             }
 
-            logger.LogInformation(
-                "[GO Reconciler] Update available! Current: {CurrentVersion}, Latest: {LatestVersion}",
-                updateResult.CurrentVersion,
-                updateResult.LatestVersion);
-
             // Check if this specific version is skipped
             var settings = userSettingsService.Get();
-            if (settings.SkippedUpdateVersions.TryGetValue(GeneralsOnlineConstants.PublisherType, out var skippedVer) &&
-                skippedVer == updateResult.LatestVersion)
+            if (settings.IsVersionSkipped(GeneralsOnlineConstants.PublisherType, updateResult.LatestVersion ?? string.Empty))
             {
                 logger.LogInformation("[GO Reconciler] User opted to skip version {Version}. Skipping.", updateResult.LatestVersion);
                 return OperationResult<bool>.CreateSuccess(false);
             }
 
             // Determine strategy
-            UpdateStrategy strategy = settings.PreferredUpdateStrategy ?? UpdateStrategy.ReplaceCurrent;
-            bool autoUpdate = settings.AutoUpdateGeneralsOnline == true;
+            var subscription = settings.GetSubscription(GeneralsOnlineConstants.PublisherType);
+            UpdateStrategy strategy = subscription?.PreferredUpdateStrategy ?? settings.PreferredUpdateStrategy ?? UpdateStrategy.ReplaceCurrent;
+            bool autoUpdate = subscription?.AutoUpdateEnabled == true;
 
             // Prompt user if preference is not set (AutoUpdate is null/false or Strategy is null/implied)
             // But we only skip dialog if AutoUpdate is TRUE.
@@ -99,15 +95,16 @@ public class GeneralsOnlineProfileReconciler(
                 {
                     logger.LogInformation("[GO Reconciler] User skipped version {Version}.", updateResult.LatestVersion);
 
-                    // Always save skipped version unless they explicitly unchecked "Do not ask again"?
-                    // Actually the "Skip Update" button usually implies skipping THIS version.
-                    // The "Don't ask again" checkbox might mean "Skip ALL updates"? No, that's AutoUpdate=False.
-                    // I'll assume Skip Button + DoNotAskAgain means "Skip THIS version permanently" (which is what SkippedVersions dict does).
-                    await userSettingsService.TryUpdateAndSaveAsync(s =>
+                    // Only permanently skip if user checked "Do not ask again"
+                    if (dialogResult.IsDoNotAskAgain)
                     {
-                        s.SkippedUpdateVersions[GeneralsOnlineConstants.PublisherType] = updateResult.LatestVersion ?? string.Empty;
-                        return true;
-                    });
+                        await userSettingsService.TryUpdateAndSaveAsync(s =>
+                        {
+                            s.SkipVersion(GeneralsOnlineConstants.PublisherType, updateResult.LatestVersion ?? string.Empty);
+                            return true;
+                        });
+                    }
+
                     return OperationResult<bool>.CreateSuccess(false);
                 }
 
@@ -118,8 +115,9 @@ public class GeneralsOnlineProfileReconciler(
                     logger.LogInformation("[GO Reconciler] Saving user preference for GeneralsOnline updates");
                     await userSettingsService.TryUpdateAndSaveAsync(s =>
                     {
-                        s.AutoUpdateGeneralsOnline = true;
-                        s.PreferredUpdateStrategy = strategy;
+                        var sub = s.GetOrCreateSubscription(GeneralsOnlineConstants.PublisherType);
+                        sub.AutoUpdateEnabled = true;
+                        sub.PreferredUpdateStrategy = strategy;
                         return true;
                     });
                 }
@@ -162,41 +160,64 @@ public class GeneralsOnlineProfileReconciler(
 
             // Step 5: Update affected profiles based on strategy
             int profilesUpdated = 0;
+            bool anyFailure = false;
+
+            // CRITICAL: If strategy is CreateNewProfile, we MUST keep old versions because existing profiles still use them.
+            // If strategy is ReplaceCurrent, we delete if the subscription/user settings allow it.
+            bool shouldDeleteOldVersions = (strategy != UpdateStrategy.CreateNewProfile) && (subscription?.DeleteOldVersions ?? true);
 
             if (strategy == UpdateStrategy.CreateNewProfile)
             {
                 var createResult = await CreateNewProfilesForUpdateAsync(oldManifests, newManifests, updateResult.LatestVersion ?? "Unknown", cancellationToken);
                 if (createResult.Success) profilesUpdated = createResult.Data;
-                else notificationService.ShowWarning("GeneralsOnline Update Partial", $"Failed to create some new profiles: {createResult.FirstError}");
+                else notificationService.ShowWarning("GeneralsOnline Update Partial", $"Failed to create some new profiles: {createResult.FirstError}", NotificationDurations.VeryLong);
             }
             else
             {
                 // ReplaceCurrent
                 var manifestMapping = BuildManifestMapping(oldManifests, newManifests);
-                var updateProfilesResult = await reconciliationService.ReconcileBulkManifestReplacementAsync(
+                var bulkUpdateResult = await reconciliationService.OrchestrateBulkUpdateAsync(
                     manifestMapping,
+                    shouldDeleteOldVersions,
                     cancellationToken);
 
-                if (updateProfilesResult.Success) profilesUpdated = updateProfilesResult.Data;
-                else notificationService.ShowWarning("GeneralsOnline Update Partial", $"Some profiles could not be updated: {updateProfilesResult.FirstError}", NotificationDurations.VeryLong);
-
-                // For ReplaceCurrent, we generally want to remove old manifests if configured
-                // Check if user wants to keep old versions even when replacing (Setting)
-                if (settings.DeleteOldGeneralsOnlineVersions)
+                if (bulkUpdateResult.Success)
                 {
-                    // Remove old manifests
-                     await RemoveOldManifestsAsync(oldManifests, newManifests, cancellationToken);
+                    profilesUpdated = bulkUpdateResult.Data.ProfilesUpdated;
+                    if (bulkUpdateResult.Data.FailedProfilesCount > 0)
+                    {
+                        anyFailure = true;
+                        notificationService.ShowWarning("GeneralsOnline Update Partial", $"{bulkUpdateResult.Data.FailedProfilesCount} profiles could not be updated.", NotificationDurations.VeryLong);
+                    }
+                }
+                else
+                {
+                    anyFailure = true;
+                    notificationService.ShowWarning("GeneralsOnline Update Partial", $"Some profiles could not be updated: {bulkUpdateResult.FirstError}", NotificationDurations.VeryLong);
+                    return OperationResult<bool>.CreateFailure($"Bulk update failed: {bulkUpdateResult.FirstError}");
                 }
             }
 
             // Step 5.5: Enforce MapPack dependency (add MapPack to profile if missing)
             // This applies to BOTH strategies (New profiles need it too, and existing ones need it)
-            // But CreateNewProfilesForUpdateAsync handles it internally for new profiles?
+            // But CreateNewProfilesForUpdateAsync handles it internally for new profiles.
             // Better to run it broadly just in case.
-            await EnforceMapPackDependencyAsync(newManifests, cancellationToken);
+            var enforceResult = await EnforceMapPackDependencyAsync(newManifests, cancellationToken);
+            if (!enforceResult.Success)
+            {
+                return OperationResult<bool>.CreateFailure(enforceResult.FirstError ?? "Failed to enforce MapPack dependency");
+            }
 
-            // Step 7: Run garbage collection
-            await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
+            // Step 7: Run garbage collection (only if old versions were deleted AND no failures occurred)
+            // If some profiles failed, GC could delete files they still rely on.
+            if (shouldDeleteOldVersions && !anyFailure)
+            {
+                await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
+            }
+            else if (shouldDeleteOldVersions && anyFailure)
+            {
+                logger.LogWarning("[GO Reconciler] Skipping scheduled GC due to partial update failure to avoid deleting referenced content.");
+            }
 
             // Step 8: Show success notification
             notificationService.ShowSuccess(
@@ -210,6 +231,11 @@ public class GeneralsOnlineProfileReconciler(
                 strategy);
 
             return OperationResult<bool>.CreateSuccess(true);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("[GO Reconciler] Reconciliation cancelled");
+            throw;
         }
         catch (Exception ex)
         {
@@ -234,10 +260,12 @@ public class GeneralsOnlineProfileReconciler(
         foreach (var oldManifest in oldManifests)
         {
             // Find corresponding new manifest by matching variant
-            var newManifest = newManifests.FirstOrDefault(n =>
-                (n.ContentType == oldManifest.ContentType ||
-                 (oldManifest.ContentType == Core.Models.Enums.ContentType.Mod && n.ContentType == Core.Models.Enums.ContentType.GameClient)) &&
-                MatchesByVariant(oldManifest.Id.Value, n.Id.Value));
+            var newManifest = newManifests
+                .OrderByDescending(n => GameVersionHelper.GetGeneralsOnlineSortableVersion(n.Version))
+                .FirstOrDefault(n =>
+                    (n.ContentType == oldManifest.ContentType ||
+                     (oldManifest.ContentType == Core.Models.Enums.ContentType.Mod && n.ContentType == Core.Models.Enums.ContentType.GameClient)) &&
+                    MatchesByVariant(oldManifest, n));
 
             if (newManifest != null)
             {
@@ -249,12 +277,12 @@ public class GeneralsOnlineProfileReconciler(
     }
 
     /// <summary>
-    /// Checks if two manifest IDs refer to the same variant (30hz, 60hz, or quickmatch-maps).
+    /// Checks if two manifests refer to the same variant (30hz, 60hz, or quickmatch-maps).
     /// </summary>
-    private static bool MatchesByVariant(string oldId, string newId)
+    private static bool MatchesByVariant(ContentManifest oldManifest, ContentManifest newManifest)
     {
-        var oldVariant = ExtractVariant(oldId);
-        var newVariant = ExtractVariant(newId);
+        var oldVariant = ExtractVariant(oldManifest);
+        var newVariant = ExtractVariant(newManifest);
         return string.Equals(oldVariant, newVariant, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -268,33 +296,76 @@ public class GeneralsOnlineProfileReconciler(
 
         var lastPart = parts[^1];
 
-        if (lastPart.Equals("30hz", StringComparison.OrdinalIgnoreCase) ||
-            lastPart.Equals("60hz", StringComparison.OrdinalIgnoreCase) ||
-            lastPart.Equals("quickmatchmaps", StringComparison.OrdinalIgnoreCase))
+        if (lastPart.Equals(GeneralsOnlineConstants.Variant30HzSuffix, StringComparison.OrdinalIgnoreCase) ||
+            lastPart.Equals(GeneralsOnlineConstants.Variant60HzSuffix, StringComparison.OrdinalIgnoreCase) ||
+            lastPart.Equals(GeneralsOnlineConstants.QuickMatchMapPackSuffix, StringComparison.OrdinalIgnoreCase))
         {
-            return lastPart;
+            return lastPart.ToLowerInvariant();
         }
 
         // Check for legacy ID formats
         if (lastPart.Equals("generalsonlinezh-60", StringComparison.OrdinalIgnoreCase))
         {
-            return "60hz";
+            return GeneralsOnlineConstants.Variant60HzSuffix;
         }
 
         if (lastPart.Equals("generalsonlinezh", StringComparison.OrdinalIgnoreCase) ||
             lastPart.Equals("generalsonlinezh-30", StringComparison.OrdinalIgnoreCase))
         {
-            return "30hz";
+            return GeneralsOnlineConstants.Variant30HzSuffix;
         }
 
         // Check for map pack variations
         if (lastPart.Contains("quickmatchmaps", StringComparison.OrdinalIgnoreCase) ||
             lastPart.Contains("generalsonlinemaps", StringComparison.OrdinalIgnoreCase))
         {
-            return "quickmatchmaps";
+            return GeneralsOnlineConstants.QuickMatchMapPackSuffix;
         }
 
-        return parts.Length > 1 ? parts[^1] : null;
+        // Fallback for legacy ID formats or unrecognized patterns.
+        // We take the last dot-separated segment as the variant.
+        // While this could theoretically cause collisions (e.g. foo.bar.baz and qux.baz),
+        // it provides necessary backward compatibility for earlier manifest ID schemes.
+        return parts.Length > 1 ? lastPart.ToLowerInvariant() : null;
+    }
+
+    /// <summary>
+    /// Extracts the variant suffix from a manifest, checking tags first for explicit variant detection.
+    /// </summary>
+    /// <param name="manifest">The manifest to extract variant from.</param>
+    /// <returns>The variant suffix, or null if not detected.</returns>
+    private static string? ExtractVariant(ContentManifest manifest)
+    {
+        // First, check for explicit variant tags in metadata (preferred method for new manifests)
+        if (manifest.Metadata?.Tags != null)
+        {
+            foreach (var tag in manifest.Metadata.Tags)
+            {
+                if (tag.Equals(GeneralsOnlineVariantTags.Tag30Hz, StringComparison.OrdinalIgnoreCase))
+                {
+                    return GeneralsOnlineConstants.Variant30HzSuffix;
+                }
+
+                if (tag.Equals(GeneralsOnlineVariantTags.Tag60Hz, StringComparison.OrdinalIgnoreCase))
+                {
+                    return GeneralsOnlineConstants.Variant60HzSuffix;
+                }
+
+                if (tag.Equals(GeneralsOnlineVariantTags.TagQuickMatchMaps, StringComparison.OrdinalIgnoreCase))
+                {
+                    return GeneralsOnlineConstants.QuickMatchMapPackSuffix;
+                }
+            }
+        }
+
+        // Fallback to explicit metadata if available (Check TargetGame for default variant association)
+        if (manifest.TargetGame == GameType.ZeroHour && manifest.ContentType == ContentType.GameClient)
+        {
+            return GeneralsOnlineConstants.DefaultVariantSuffix;
+        }
+
+        // Fallback to ID-based detection for legacy manifests
+        return ExtractVariant(manifest.Id.Value);
     }
 
     /// <summary>
@@ -313,8 +384,8 @@ public class GeneralsOnlineProfileReconciler(
             .Where(m =>
                 !m.Id.Value.Contains(".local.", StringComparison.OrdinalIgnoreCase) && // Exclude local content
                 (m.Publisher?.PublisherType?.Equals(PublisherTypeConstants.GeneralsOnline, StringComparison.OrdinalIgnoreCase) == true ||
-                 m.Id.Value.Contains(".generalsonline.", StringComparison.OrdinalIgnoreCase) ||
-                 m.Name.Contains("GeneralsOnline", StringComparison.OrdinalIgnoreCase)))];
+                  m.Id.Value.Contains(".generalsonline.", StringComparison.OrdinalIgnoreCase) ||
+                  m.Name.Contains("GeneralsOnline", StringComparison.OrdinalIgnoreCase)))];
     }
 
     /// <summary>
@@ -349,10 +420,14 @@ public class GeneralsOnlineProfileReconciler(
             var allResults = new List<ContentSearchResult>();
 
             if (clientResult.Success && clientResult.Data != null)
+            {
                 allResults.AddRange(clientResult.Data);
+            }
 
             if (mapPackResult.Success && mapPackResult.Data != null)
+            {
                 allResults.AddRange(mapPackResult.Data);
+            }
 
             if (allResults.Count == 0)
             {
@@ -362,106 +437,91 @@ public class GeneralsOnlineProfileReconciler(
 
             foreach (var result in allResults)
             {
-                await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
+                var acquireOp = await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
+                if (!acquireOp.Success)
+                {
+                    logger.LogError(
+                        "[GO:Reconciler] Failed to acquire content {ContentId}: {Error}",
+                        result.Id,
+                        acquireOp.FirstError);
+
+                    return OperationResult<List<ContentManifest>>.CreateFailure(
+                        $"Failed to acquire content {result.Id}: {acquireOp.FirstError}");
+                }
             }
 
             var allGoManifests = await FindGeneralsOnlineManifestsAsync(cancellationToken);
             var oldIds = oldManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var newManifests = allGoManifests
-                .Where(m => !oldIds.Contains(m.Id.Value))
-                .ToList();
+            var newManifests = allGoManifests.Where(m => !oldIds.Contains(m.Id.Value)).ToList();
 
             if (newManifests.Count == 0)
             {
                 return OperationResult<List<ContentManifest>>.CreateFailure(
-                    "Acquisition completed but no new GeneralsOnline manifests were found in the pool");
+                    "Acquisition completed but no new GeneralsOnline manifests were found in pool");
             }
 
             return OperationResult<List<ContentManifest>>.CreateSuccess(newManifests);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "[GO Reconciler] Failed to acquire latest version");
-            return OperationResult<List<ContentManifest>>.CreateFailure($"Failed to acquire latest version: {ex.Message}");
+            return OperationResult<List<ContentManifest>>.CreateFailure(
+                $"Failed to acquire latest version: {ex.Message}");
         }
     }
 
     /// <summary>
     /// Enforces that profiles using the new GeneralsOnline client also have the new MapPack.
     /// </summary>
-    private async Task EnforceMapPackDependencyAsync(
+    private async Task<OperationResult> EnforceMapPackDependencyAsync(
         List<ContentManifest> newManifests,
         CancellationToken cancellationToken)
     {
         // 1. Identify the new MapPack ID and GameClient IDs
         var newMapPack = newManifests.FirstOrDefault(m => m.ContentType == ContentType.MapPack);
-        var newMapPackId = newMapPack?.Id.Value;
-
-        // If not found in newManifests, try to find the latest MapPack in the pool
-        if (newMapPackId == null)
-        {
-            var poolManifests = await manifestPool.GetAllManifestsAsync(cancellationToken);
-            if (poolManifests.Success && poolManifests.Data != null)
-            {
-                var latestMapPack = poolManifests.Data
-                    .Where(m => m.Publisher?.PublisherType == PublisherTypeConstants.GeneralsOnline && m.ContentType == ContentType.MapPack)
-                    .OrderByDescending(m => m.Version) // Simple version sort should be enough for same publisher
-                    .FirstOrDefault();
-
-                newMapPackId = latestMapPack?.Id.Value;
-            }
-        }
-
-        var newGameClients = newManifests
+        var newGameClientIds = newManifests
             .Where(m => m.ContentType == ContentType.GameClient)
             .Select(m => m.Id.Value)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (newMapPackId == null || newGameClients.Count == 0)
+        if (newMapPack == null || newGameClientIds.Count == 0)
         {
-            logger.LogInformation("[GO Reconciler] No MapPack (found: {HasMapPack}) or GameClient ({ClientCount}) found for dependency enforcement.", newMapPackId != null, newGameClients.Count);
-            return;
+            logger.LogInformation("[GO Reconciler] No MapPack (found: {HasMapPack}) or GameClient ({ClientCount}) found for dependency enforcement.", newMapPack != null, newGameClientIds.Count);
+            return OperationResult.CreateSuccess();
         }
+
+        var newMapPackId = newMapPack.Id.Value;
 
         // 2. Get all profiles
         var allProfilesResult = await profileManager.GetAllProfilesAsync(cancellationToken);
         if (!allProfilesResult.Success || allProfilesResult.Data == null)
         {
             logger.LogWarning("[GO Reconciler] Failed to retrieve profiles for dependency enforcement.");
-            return;
+            return OperationResult.CreateFailure("Failed to retrieve profiles for dependency enforcement");
         }
 
         // 3. Iterate profiles and patch if needed
+        var errors = new List<string>();
         foreach (var profile in allProfilesResult.Data)
         {
             // Check if profile uses one of the new GameClients
-            // GameClient might be null for some profiles
-            // Check if profile uses one of the new GameClients OR looks like a Generals Online profile
-            // We do this relaxed check because sometimes the profile update might not be reflected immediately in the repository cache,
-            // so checking strictly against 'newGameClients' might fail if the profile still has the old ID in memory.
             bool isGeneralsOnline = profile.GameClient != null &&
-                                    (newGameClients.Contains(profile.GameClient.Id) ||
-                                     profile.GameClient.Id.Contains("generalsonline", StringComparison.OrdinalIgnoreCase) ||
-                                     (profile.GameClient.Name?.Contains("GeneralsOnline", StringComparison.OrdinalIgnoreCase) ?? false));
-
-            if (!isGeneralsOnline)
-            {
-                continue;
-            }
+                                    newGameClientIds.Contains(profile.GameClient.Id);
 
             // Check if profile already has the new MapPack
-            // We also check enabled content IDs.
-            var hasMapPack = profile.EnabledContentIds?.Contains(newMapPackId, StringComparer.OrdinalIgnoreCase) ?? false;
+            bool hasMapPack = profile.EnabledContentIds?.Contains(newMapPackId, StringComparer.OrdinalIgnoreCase) ?? false;
 
-            if (!hasMapPack)
+            if (isGeneralsOnline && !hasMapPack)
             {
                 logger.LogInformation("[GO Reconciler] Adding required MapPack {MapPackId} to profile {ProfileName}", newMapPackId, profile.Name);
 
                 var newEnabledContent = profile.EnabledContentIds != null
-                    ? new List<string>(profile.EnabledContentIds)
-                    : [];
-
+                    ? [.. profile.EnabledContentIds]
+                    : new List<string>();
                 newEnabledContent.Add(newMapPackId);
 
                 var updateRequest = new Core.Models.GameProfile.UpdateProfileRequest
@@ -472,34 +532,19 @@ public class GeneralsOnlineProfileReconciler(
                 var updateResult = await profileManager.UpdateProfileAsync(profile.Id, updateRequest, cancellationToken);
                 if (!updateResult.Success)
                 {
-                    logger.LogError("[GO Reconciler] Failed to add MapPack to profile {ProfileName}: {Error}", profile.Name, updateResult.FirstError);
+                    var errorMsg = $"Failed to update profile '{profile.Name}': {updateResult.FirstError}";
+                    errors.Add(errorMsg);
+                    logger.LogError("[GO Reconciler] {Error}", errorMsg);
                 }
             }
         }
-    }
 
-    /// <summary>
-    /// Removes old GeneralsOnline manifests from the manifest pool.
-    /// </summary>
-    private async Task RemoveOldManifestsAsync(
-        List<ContentManifest> oldManifests,
-        List<ContentManifest> newManifests,
-        CancellationToken cancellationToken)
-    {
-        var newManifestIds = newManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var manifest in oldManifests)
+        if (errors.Count > 0)
         {
-            if (newManifestIds.Contains(manifest.Id.Value)) continue;
-
-            logger.LogInformation("[GO Reconciler] Removing old manifest: {ManifestId}", manifest.Id.Value);
-
-            var removeResult = await manifestPool.RemoveManifestAsync(manifest.Id, cancellationToken);
-            if (!removeResult.Success)
-            {
-                logger.LogWarning("[GO Reconciler] Failed to remove old manifest {ManifestId}: {Error}", manifest.Id.Value, removeResult.FirstError);
-            }
+            return OperationResult.CreateFailure($"Failed to update {errors.Count} profiles: {string.Join("; ", errors.Take(3))}{(errors.Count > 3 ? "..." : string.Empty)}");
         }
+
+        return OperationResult.CreateSuccess();
     }
 
     /// <summary>
@@ -516,7 +561,10 @@ public class GeneralsOnlineProfileReconciler(
         int createdCount = 0;
 
         var allProfiles = await profileManager.GetAllProfilesAsync(cancellationToken);
-        if (!allProfiles.Success || allProfiles.Data == null) return OperationResult<int>.CreateSuccess(0);
+        if (!allProfiles.Success || allProfiles.Data == null)
+        {
+            return OperationResult<int>.CreateFailure("Failed to retrieve profiles for creating new profiles");
+        }
 
         foreach (var profile in allProfiles.Data)
         {
@@ -533,7 +581,7 @@ public class GeneralsOnlineProfileReconciler(
                 {
                    Name = $"{profile.Name} (v{newVersion})",
                    GameInstallationId = profile.GameInstallationId,
-                   PreferredStrategy = profile.WorkspaceStrategy,
+                   WorkspaceStrategy = profile.WorkspaceStrategy,
                    GameClient = profile.GameClient,
                 };
 
@@ -549,7 +597,8 @@ public class GeneralsOnlineProfileReconciler(
                         }
                         else
                         {
-                            newEnabledContent.Add(id); // Keep non-GO content
+                            // Keep non-GO content
+                            newEnabledContent.Add(id);
                         }
                     }
                 }
@@ -566,6 +615,10 @@ public class GeneralsOnlineProfileReconciler(
                 {
                     logger.LogError("[GO Reconciler] Failed to create new profile for update: {Error}", createResult.FirstError);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

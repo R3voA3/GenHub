@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Messaging;
 using GenHub.Common.ViewModels;
 using GenHub.Core.Constants;
@@ -132,7 +133,8 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
             SourceId = coreItem.SourceId,
             GameClientId = coreItem.GameClientId,
             IsEnabled = coreItem.IsEnabled,
-            IsEditable = coreItem.Publisher == Core.Services.Content.LocalContentService.LocalPublisherName,
+            IsEditable = coreItem.IsEditable,
+            SourcePath = coreItem.SourcePath,
         };
     }
 
@@ -145,7 +147,6 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
     private readonly IContentManifestPool? _manifestPool;
     private readonly IContentStorageService? _contentStorageService;
     private readonly ILocalContentService? _localContentService;
-    private readonly Core.Interfaces.Content.ILocalContentProfileReconciler? _localContentProfileReconciler;
     private readonly ILogger<GameProfileSettingsViewModel>? _logger;
     private readonly ILogger<GameSettingsViewModel>? _gameSettingsLogger;
 
@@ -181,7 +182,6 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
     /// <param name="manifestPool">The manifest pool.</param>
     /// <param name="contentStorageService">The content storage service.</param>
     /// <param name="localContentService">The local content service.</param>
-    /// <param name="localContentProfileReconciler">The local content profile reconciler.</param>
     /// <param name="logger">The logger for this view model.</param>
     /// <param name="gameSettingsLogger">The logger for the game settings view model.</param>
     public GameProfileSettingsViewModel(
@@ -194,7 +194,6 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
         IContentManifestPool? manifestPool,
         IContentStorageService? contentStorageService,
         ILocalContentService? localContentService,
-        Core.Interfaces.Content.ILocalContentProfileReconciler? localContentProfileReconciler,
         ILogger<GameProfileSettingsViewModel>? logger,
         ILogger<GameSettingsViewModel>? gameSettingsLogger)
     {
@@ -207,7 +206,6 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
         _manifestPool = manifestPool;
         _contentStorageService = contentStorageService;
         _localContentService = localContentService;
-        _localContentProfileReconciler = localContentProfileReconciler;
         _logger = logger;
         _gameSettingsLogger = gameSettingsLogger;
 
@@ -229,7 +227,8 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
     public void Receive(ManifestReplacedMessage message)
     {
         // Global manifest replacement - update our state surgicaly to avoid losing unsaved toggles
-        _ = HandleManifestReplacementAsync(message.OldId, message.NewId);
+        // Dispatch to UI thread to ensure ObservableCollection mutations happen safely
+        Dispatcher.UIThread.Post(() => _ = HandleManifestReplacementAsync(message.OldId, message.NewId));
     }
 
     /// <summary>
@@ -253,14 +252,17 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
                 var index = EnabledContent.IndexOf(inEnabled);
 
                 // Get the new presentation data for the item
-                var manifestResult = await _manifestPool!.GetManifestAsync(newId);
-                if (manifestResult.Success && manifestResult.Data != null)
+                if (_manifestPool != null && _profileContentLoader != null)
                 {
-                    var coreItem = _profileContentLoader!.CreateManifestDisplayItem(manifestResult.Data);
-                    var viewModelItem = ConvertToViewModelContentDisplayItem(coreItem);
-                    viewModelItem.IsEnabled = true;
-                    EnabledContent[index] = viewModelItem;
-                    affected = true;
+                    var manifestResult = await _manifestPool.GetManifestAsync(newId);
+                    if (manifestResult.Success && manifestResult.Data != null)
+                    {
+                        var coreItem = _profileContentLoader.CreateManifestDisplayItem(manifestResult.Data);
+                        var viewModelItem = ConvertToViewModelContentDisplayItem(coreItem);
+                        viewModelItem.IsEnabled = true;
+                        EnabledContent[index] = viewModelItem;
+                        affected = true;
+                    }
                 }
             }
 
@@ -276,12 +278,16 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
             // 3. Check SelectedGameInstallation (if it's a GameClient replacement)
             if (SelectedGameInstallation != null && SelectedGameInstallation.ManifestId.Value == oldId)
             {
-                var manifestResult = await _manifestPool!.GetManifestAsync(newId);
-                if (manifestResult.Success && manifestResult.Data != null)
+                if (_manifestPool != null && _profileContentLoader != null)
                 {
-                    var coreItem = _profileContentLoader!.CreateManifestDisplayItem(manifestResult.Data);
-                    SelectedGameInstallation = ConvertToViewModelContentDisplayItem(coreItem);
-                    SelectedGameInstallation.IsEnabled = true;
+                    var manifestResult = await _manifestPool.GetManifestAsync(newId);
+                    if (manifestResult.Success && manifestResult.Data != null)
+                    {
+                        var coreItem = _profileContentLoader.CreateManifestDisplayItem(manifestResult.Data);
+                        SelectedGameInstallation = ConvertToViewModelContentDisplayItem(coreItem);
+                        SelectedGameInstallation.IsEnabled = true;
+                        affected = true;
+                    }
                 }
             }
 
@@ -370,6 +376,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
                             GameClientId = existing.GameClientId,
                             Version = existing.Version,
                             IsEditable = existing.IsEditable,
+                            SourcePath = existing.SourcePath,
                         });
                     }
                 }
@@ -513,9 +520,9 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
                         alreadyEnabled = EnabledContent.Any(x => x.ContentType == dependency.DependencyType);
                     }
 
-                    if (!alreadyEnabled && !dependency.IsOptional)
+                    if (!alreadyEnabled && !dependency.IsOptional && _profileContentLoader != null)
                     {
-                        var availableOfTargetType = await _profileContentLoader!.LoadAvailableContentAsync(
+                        var availableOfTargetType = await _profileContentLoader.LoadAvailableContentAsync(
                             dependency.DependencyType,
                             new ObservableCollection<Core.Models.Content.ContentDisplayItem>(AvailableGameInstallations.Select(x => new Core.Models.Content.ContentDisplayItem
                             {
@@ -731,7 +738,9 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
         try
         {
             EnabledContent.Clear();
-            var coreItems = await _profileContentLoader!.LoadEnabledContentForProfileAsync(profile);
+            if (_profileContentLoader == null) return;
+
+            var coreItems = await _profileContentLoader.LoadEnabledContentForProfileAsync(profile);
             foreach (var coreItem in coreItems)
             {
                 var viewModelItem = ConvertToViewModelContentDisplayItem(coreItem);
@@ -750,7 +759,9 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
         try
         {
             AvailableGameInstallations.Clear();
-            var coreItems = await _profileContentLoader!.LoadAvailableGameInstallationsAsync();
+            if (_profileContentLoader == null) return;
+
+            var coreItems = await _profileContentLoader.LoadAvailableGameInstallationsAsync();
             foreach (var coreItem in coreItems)
             {
                 try
@@ -776,5 +787,6 @@ public partial class GameProfileSettingsViewModel : ViewModelBase,
         }
     }
 
-    private WorkspaceStrategy GetDefaultWorkspaceStrategy() => _configurationProvider!.GetDefaultWorkspaceStrategy();
+    private WorkspaceStrategy GetDefaultWorkspaceStrategy() =>
+        _configurationProvider?.GetDefaultWorkspaceStrategy() ?? WorkspaceConstants.DefaultWorkspaceStrategy;
 }

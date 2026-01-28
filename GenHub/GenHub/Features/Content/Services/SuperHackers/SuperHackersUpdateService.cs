@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Constants;
 using GenHub.Core.Helpers;
+using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Models.Results.Content;
 using Microsoft.Extensions.Logging;
@@ -20,17 +21,9 @@ namespace GenHub.Features.Content.Services.SuperHackers;
 public class SuperHackersUpdateService(
     ILogger<SuperHackersUpdateService> logger,
     IContentManifestPool manifestPool,
-    IHttpClientFactory httpClientFactory) : ContentUpdateServiceBase(logger)
+    IHttpClientFactory httpClientFactory) : ContentUpdateServiceBase(logger), ISuperHackersUpdateService
 {
-    private readonly HttpClient _httpClient = httpClientFactory.CreateClient(PublisherTypeConstants.TheSuperHackers);
-
-    /// <inheritdoc />
-    public override void Dispose()
-    {
-        _httpClient?.Dispose();
-        base.Dispose();
-        GC.SuppressFinalize(this);
-    }
+    // HttpClient is created per request via factory, so no need for Dispose or cached instance.
 
     /// <inheritdoc />
     protected override string ServiceName => SuperHackersConstants.ServiceName;
@@ -105,13 +98,14 @@ public class SuperHackersUpdateService(
 
             if (shManifests.Count == 0) return null;
 
-            // Sort by version and pick the oldest one installed
-            // This ensures that if ANY manifest is outdated, we trigger an update check
-            var oldest = shManifests
-                .OrderBy(m => m.Version, new VersionStringComparer(PublisherTypeConstants.TheSuperHackers))
+            // Sort by version descending and pick the newest one installed
+            // This ensures we check updates against the latest version the user has, avoiding false positives
+            // if they keep old versions installed.
+            var newest = shManifests
+                .OrderByDescending(m => m.Version, new VersionStringComparer(PublisherTypeConstants.TheSuperHackers))
                 .FirstOrDefault();
 
-            return oldest?.Version;
+            return newest?.Version;
         }
         catch (Exception ex)
         {
@@ -132,21 +126,23 @@ public class SuperHackersUpdateService(
             // Construct GitHub API URL
             var url = $"https://api.github.com/repos/{SuperHackersConstants.GeneralsGameCodeOwner}/{SuperHackersConstants.GeneralsGameCodeRepo}/releases/latest";
 
+            using var httpClient = httpClientFactory.CreateClient(PublisherTypeConstants.TheSuperHackers);
+
             // Allow override via HttpClient configuration if needed, but default to direct API
-            if (_httpClient.BaseAddress != null && !_httpClient.BaseAddress.ToString().Contains("api.github.com"))
+            if (httpClient.BaseAddress != null && !httpClient.BaseAddress.ToString().Contains("api.github.com"))
             {
                // This handles if client is pre-configured with a base URL
             }
             else
             {
                  // Ensure User-Agent is set globally or here (GitHub requires it)
-                 if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
+                 if (httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
                  {
-                     _httpClient.DefaultRequestHeaders.Add("User-Agent", "GenHub-Agent");
+                     httpClient.DefaultRequestHeaders.Add("User-Agent", "GenHub-Agent");
                  }
             }
 
-            var response = await _httpClient.GetAsync(url, cancellationToken);
+            var response = await httpClient.GetAsync(url, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {

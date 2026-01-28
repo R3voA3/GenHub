@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -21,13 +22,14 @@ public partial class GameProfileContentEditorView : UserControl
     private readonly List<(string Name, Control Control, ContentEditorCategory Category)> _sections = [];
 
     private ScrollViewer? _scrollViewer;
+    private GameProfileSettingsViewModel? _subscribedViewModel;
     private bool _isScrollingProgrammatically;
 
     // Animation state
     private DispatcherTimer? _animationTimer;
+    private Stopwatch _animationStopwatch = new();
     private double _animStartOffset;
     private double _animTargetOffset;
-    private DateTime _animStartTime;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameProfileContentEditorView"/> class.
@@ -52,6 +54,7 @@ public partial class GameProfileContentEditorView : UserControl
         }
 
         // Map sections in top-to-bottom order (order matters for scroll spy)
+        _sections.Clear();
         MapSection("EnabledContentSection", ContentEditorCategory.EnabledContent);
         MapSection("AvailableContentSection", ContentEditorCategory.AvailableContent);
 
@@ -79,10 +82,10 @@ public partial class GameProfileContentEditorView : UserControl
             _scrollViewer.ScrollChanged -= OnScrollChanged;
         }
 
-        if (DataContext is GameProfileSettingsViewModel vm)
+        if (_subscribedViewModel != null)
         {
-            // Remove our handler from the multicast delegate
-            vm.ScrollToSectionRequested -= OnScrollToSectionRequested;
+            _subscribedViewModel.ScrollToSectionRequested -= OnScrollToSectionRequested;
+            _subscribedViewModel = null;
         }
     }
 
@@ -95,21 +98,22 @@ public partial class GameProfileContentEditorView : UserControl
     {
         if (_scrollViewer == null || DataContext is not GameProfileSettingsViewModel vm)
         {
-            System.Diagnostics.Debug.WriteLine($"[ContentEditor] SetupScrollSpy FAILED - ScrollViewer: {_scrollViewer != null}, ViewModel: {DataContext is GameProfileSettingsViewModel}");
             return;
         }
 
-        System.Diagnostics.Debug.WriteLine("[ContentEditor] SetupScrollSpy SUCCESS - Setting up scroll spy");
-
         // Unsubscribe first to avoid duplicate subscriptions
         _scrollViewer.ScrollChanged -= OnScrollChanged;
+        if (_subscribedViewModel != null)
+        {
+            _subscribedViewModel.ScrollToSectionRequested -= OnScrollToSectionRequested;
+        }
 
         // Subscribe to scroll changes
         _scrollViewer.ScrollChanged += OnScrollChanged;
 
         // Add our handler to the multicast delegate (don't replace other views' handlers)
-        vm.ScrollToSectionRequested += OnScrollToSectionRequested;
-        System.Diagnostics.Debug.WriteLine("[ContentEditor] ScrollToSectionRequested handler added");
+        _subscribedViewModel = vm;
+        _subscribedViewModel.ScrollToSectionRequested += OnScrollToSectionRequested;
     }
 
     private void InitializeComponent()
@@ -128,11 +132,8 @@ public partial class GameProfileContentEditorView : UserControl
 
     private void OnScrollToSectionRequested(string sectionName)
     {
-        System.Diagnostics.Debug.WriteLine($"[ContentEditor] OnScrollToSectionRequested called with section: {sectionName}");
-
         if (_scrollViewer == null)
         {
-            System.Diagnostics.Debug.WriteLine("[ContentEditor] ScrollViewer is null, cannot scroll");
             return;
         }
 
@@ -143,35 +144,29 @@ public partial class GameProfileContentEditorView : UserControl
             if (section.Name == sectionName)
             {
                 targetControl = section.Control;
-                System.Diagnostics.Debug.WriteLine($"[ContentEditor] Found target control for section: {sectionName}");
                 break;
             }
         }
 
         if (targetControl == null)
         {
-            System.Diagnostics.Debug.WriteLine($"[ContentEditor] Target control not found for section: {sectionName}. Available sections: {string.Join(", ", _sections.Select(s => s.Name))}");
             return;
         }
 
         // Calculate target offset
         if (_scrollViewer.Content is not Control content)
         {
-            System.Diagnostics.Debug.WriteLine("[ContentEditor] ScrollViewer content is not a Control");
             return;
         }
 
         var transform = targetControl.TransformToVisual(content);
         if (!transform.HasValue)
         {
-            System.Diagnostics.Debug.WriteLine("[ContentEditor] Transform is null");
             return;
         }
 
         var pos = transform.Value.Transform(new Point(0, 0));
         var targetY = Math.Max(0, Math.Min(pos.Y, _scrollViewer.Extent.Height - _scrollViewer.Viewport.Height));
-
-        System.Diagnostics.Debug.WriteLine($"[ContentEditor] Starting scroll animation to Y={targetY}");
 
         // Start smooth scroll animation
         StartAnimation(_scrollViewer.Offset.Y, targetY);
@@ -184,7 +179,7 @@ public partial class GameProfileContentEditorView : UserControl
         _isScrollingProgrammatically = true;
         _animStartOffset = fromY;
         _animTargetOffset = toY;
-        _animStartTime = DateTime.UtcNow;
+        _animationStopwatch.Restart();
 
         _animationTimer = new DispatcherTimer { Interval = FrameInterval };
         _animationTimer.Tick += OnAnimationTick;
@@ -211,7 +206,7 @@ public partial class GameProfileContentEditorView : UserControl
             return;
         }
 
-        var elapsed = DateTime.UtcNow - _animStartTime;
+        var elapsed = _animationStopwatch.Elapsed;
         var t = Math.Min(1.0, elapsed.TotalMilliseconds / AnimationDuration.TotalMilliseconds);
 
         // Ease-in-out quadratic

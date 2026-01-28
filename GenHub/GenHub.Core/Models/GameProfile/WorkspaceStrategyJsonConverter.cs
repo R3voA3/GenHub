@@ -6,38 +6,23 @@ using GenHub.Core.Models.Enums;
 namespace GenHub.Core.Models.GameProfile;
 
 /// <summary>
-/// Custom JSON converter for WorkspaceStrategy that applies the configured default (HardLink)
-/// when the property is missing from JSON, instead of using the enum default (SymlinkOnly = 0).
-/// This fixes the bug where profiles revert to SymlinkOnly after deserialization.
+/// Custom JSON converter for WorkspaceStrategy.
+/// Defaulting is applied by services, not in this converter.
+/// This converter ensures that the value is correctly deserialized from JSON.
 /// </summary>
-public class WorkspaceStrategyJsonConverter : JsonConverter<WorkspaceStrategy>
+public class WorkspaceStrategyJsonConverter : JsonConverter<WorkspaceStrategy?>
 {
     /// <inheritdoc/>
-    public override WorkspaceStrategy Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override WorkspaceStrategy? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null)
         {
-            // If the JSON value is explicitly null, use the configured default
-            return WorkspaceConstants.DefaultWorkspaceStrategy;
+            return null;
         }
 
         if (reader.TokenType == JsonTokenType.Number)
         {
-            var value = reader.GetInt32();
-
-            // If the value is 0 (SymlinkOnly), it could be:
-            // 1. Explicitly set by the user (intentional)
-            // 2. The result of missing property defaulting to 0 (unintentional)
-            //
-            // Since we can't distinguish between these cases reliably,
-            // we'll treat 0 as the configured default to fix the bug.
-            // Users who explicitly want SymlinkOnly will need to re-save their profiles.
-            if (value == 0)
-            {
-                return WorkspaceConstants.DefaultWorkspaceStrategy;
-            }
-
-            return (WorkspaceStrategy)value;
+            return (WorkspaceStrategy)reader.GetInt32();
         }
 
         if (reader.TokenType == JsonTokenType.String)
@@ -45,21 +30,24 @@ public class WorkspaceStrategyJsonConverter : JsonConverter<WorkspaceStrategy>
             var stringValue = reader.GetString();
             if (Enum.TryParse<WorkspaceStrategy>(stringValue, true, out var result))
             {
-                // Same logic: if parsed as SymlinkOnly, use the default
-                return result == WorkspaceStrategy.SymlinkOnly
-                    ? WorkspaceConstants.DefaultWorkspaceStrategy
-                    : result;
+                return result;
             }
         }
 
-        // Fallback to default if we can't parse
-        return WorkspaceConstants.DefaultWorkspaceStrategy;
+        return null;
     }
 
     /// <inheritdoc/>
-    public override void Write(Utf8JsonWriter writer, WorkspaceStrategy value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, WorkspaceStrategy? value, JsonSerializerOptions options)
     {
-        // Write as integer for compact JSON
-        writer.WriteNumberValue((int)value);
+        if (value == null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            // Write as string for better readability and to ensure 0 (SymlinkOnly) is explicit
+            writer.WriteStringValue(value.Value.ToString());
+        }
     }
 }

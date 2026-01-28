@@ -9,6 +9,7 @@ using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.GameClients;
 using GenHub.Core.Models.GameInstallations;
 using GenHub.Core.Models.Manifest;
+using GenHub.Core.Services.Content;
 using System;
 
 namespace GenHub.Features.GameProfiles.Services;
@@ -29,7 +30,8 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
         var installationType = GetInstallationTypeFromManifest(manifest);
 
         // Suppress version display for local content to reduce UI clutter
-        var isLocal = manifest.Publisher?.PublisherType?.Equals("local", StringComparison.OrdinalIgnoreCase) == true;
+        var isLocal = manifest.Publisher?.PublisherType?.Equals(LocalContentService.LocalPublisherType, StringComparison.OrdinalIgnoreCase) == true
+            || !string.IsNullOrEmpty(manifest.SourcePath); // Fallback for legacy local content
         var normalizedVersion = isLocal ? string.Empty : NormalizeVersion(manifest.Version);
 
         var displayName = BuildDisplayName(manifest.TargetGame, normalizedVersion, manifest.Name);
@@ -46,6 +48,8 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
             Version = normalizedVersion,
             IsEnabled = isEnabled,
             Manifest = manifest,
+            IsEditable = isLocal,
+            SourcePath = manifest.SourcePath,
         };
     }
 
@@ -95,20 +99,15 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
             return string.Empty;
         }
 
-        // Handle Auto-Updated versions (GeneralsOnline) - return empty string
-        if (trimmedVersion.Equals("Auto-Updated", StringComparison.OrdinalIgnoreCase))
+        // Remove 'v' prefix if present (case-insensitive)
+        if (trimmedVersion.StartsWith(VersionPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return string.Empty;
-        }
-
-        // Handle auto-detected GeneralsOnline clients - return empty string to avoid showing "vAutomatically added"
-        if (trimmedVersion.Equals(GameClientConstants.AutoDetectedVersion, StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Empty;
+            trimmedVersion = trimmedVersion[VersionPrefix.Length..].Trim();
         }
 
         // Handle zero versions (local content) - return empty string
-        if (trimmedVersion == "0" || trimmedVersion == "0.0" || trimmedVersion == "0.0.0" || trimmedVersion == "0.0.0.0")
+        // Check this AFTER stripping the prefix to correctly handle "v0.0" etc.
+        if (Version.TryParse(trimmedVersion, out var v) && v is { Major: 0, Minor: 0, Build: <= 0, Revision: <= 0 })
         {
             return string.Empty;
         }
@@ -118,12 +117,6 @@ public sealed class ContentDisplayFormatter(IGameClientHashRegistry hashRegistry
         if (detectedGameType != GameType.Unknown && !string.IsNullOrEmpty(hashVersion))
         {
             return hashVersion;
-        }
-
-        // Remove 'v' prefix if present (case-insensitive)
-        if (trimmedVersion.StartsWith(VersionPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return trimmedVersion[VersionPrefix.Length..].Trim();
         }
 
         return trimmedVersion;

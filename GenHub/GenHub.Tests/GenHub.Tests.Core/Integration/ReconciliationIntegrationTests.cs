@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -33,8 +34,9 @@ namespace GenHub.Tests.Core.Integration;
 /// <summary>
 /// Integration tests for content reconciliation across different providers.
 /// </summary>
-public class ReconciliationIntegrationTests
+public class ReconciliationIntegrationTests : IDisposable
 {
+    private readonly HttpClient _sharedHttpClient;
     private readonly Mock<IContentManifestPool> _manifestPoolMock;
     private readonly Mock<IContentOrchestrator> _orchestratorMock;
     private readonly Mock<IContentReconciliationService> _reconciliationServiceMock;
@@ -48,6 +50,7 @@ public class ReconciliationIntegrationTests
     /// </summary>
     public ReconciliationIntegrationTests()
     {
+        _sharedHttpClient = new HttpClient();
         _manifestPoolMock = new Mock<IContentManifestPool>();
         _orchestratorMock = new Mock<IContentOrchestrator>();
         _reconciliationServiceMock = new Mock<IContentReconciliationService>();
@@ -57,28 +60,38 @@ public class ReconciliationIntegrationTests
         _profileManagerMock = new Mock<IGameProfileManager>();
 
         // Default settings
-        _userSettingsServiceMock.Setup(x => x.Get()).Returns(new UserSettings
+        var settings = new UserSettings
         {
-            AutoUpdateGeneralsOnline = true,
-            AutoUpdateCommunityPatch = true,
-            AutoUpdateSuperHackers = true,
             PreferredUpdateStrategy = UpdateStrategy.ReplaceCurrent,
-            SkippedUpdateVersions = [],
             ExplicitlySetProperties = [],
             CasConfiguration = new CasConfiguration(),
-        });
+        };
+        settings.SetAutoUpdatePreference(GeneralsOnlineConstants.PublisherType, true);
+        settings.SetAutoUpdatePreference(CommunityOutpostConstants.PublisherType, true);
+        settings.SetAutoUpdatePreference(PublisherTypeConstants.TheSuperHackers, true);
 
-        _manifestPoolMock.Setup(x => x.RemoveManifestAsync(It.IsAny<ManifestId>(), It.IsAny<CancellationToken>()))
+        _userSettingsServiceMock.Setup(x => x.Get()).Returns(settings);
+
+        _manifestPoolMock.Setup(x => x.RemoveManifestAsync(It.IsAny<ManifestId>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
         _manifestPoolMock.Setup(x => x.AddManifestAsync(It.IsAny<ContentManifest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<bool>.CreateSuccess(true));
 
-        _reconciliationServiceMock.Setup(x => x.ReconcileBulkManifestReplacementAsync(It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<int>.CreateSuccess(1));
+        _reconciliationServiceMock.Setup(x => x.OrchestrateBulkUpdateAsync(It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult<ReconciliationResult>.CreateSuccess(new ReconciliationResult(1, 0)));
 
         _reconciliationServiceMock.Setup(x => x.ScheduleGarbageCollectionAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult.CreateSuccess());
+    }
+
+    /// <summary>
+    /// Disposes resources used by the test class.
+    /// </summary>
+    public void Dispose()
+    {
+        _sharedHttpClient?.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -98,27 +111,27 @@ public class ReconciliationIntegrationTests
             EnabledContentIds = [oldManifestId],
         };
 
-        var updateServiceMock = new Mock<CommunityOutpostUpdateService>(
-            ModellessDiscoverer(),
-            ModellessResolver(),
-            _manifestPoolMock.Object,
-            NullLogger<CommunityOutpostUpdateService>.Instance);
+        // Setup profile manager to return the test profile
+        _profileManagerMock.Setup(x => x.GetAllProfilesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ProfileOperationResult<IReadOnlyList<GameProfile>>.CreateSuccess([profile]));
+
+        var updateServiceMock = new Mock<ICommunityOutpostUpdateService>();
 
         updateServiceMock.Setup(x => x.CheckForUpdatesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(ContentUpdateCheckResult.CreateUpdateAvailable("1.11", "1.10"));
+             .ReturnsAsync(ContentUpdateCheckResult.CreateUpdateAvailable("1.11", "1.10"));
 
         var oldManifest = new ContentManifest
         {
             Id = new ManifestId(oldManifestId),
             ContentType = ContentType.Patch,
-            ManifestVersion = "1.10",
+            Version = "1.10",
             Publisher = new PublisherInfo { PublisherType = CommunityOutpostConstants.PublisherType },
         };
         var newManifest = new ContentManifest
         {
             Id = new ManifestId("1.11.communityoutpost.patch.communitypatch"),
             ContentType = ContentType.Patch,
-            ManifestVersion = "1.11",
+            Version = "1.11",
             Publisher = new PublisherInfo { PublisherType = CommunityOutpostConstants.PublisherType },
         };
 
@@ -152,6 +165,14 @@ public class ReconciliationIntegrationTests
         // Assert
         result.Success.Should().BeTrue(result.FirstError);
         result.Data.Should().BeTrue("Reconciler should report true when update was applied");
+
+        // Verify that the bulk update was orchestrated
+        _reconciliationServiceMock.Verify(
+            x => x.OrchestrateBulkUpdateAsync(
+                It.Is<IReadOnlyDictionary<string, string>>(d => d.ContainsKey(oldManifestId) && d[oldManifestId] == newManifest.Id.Value),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     /// <summary>
@@ -162,24 +183,20 @@ public class ReconciliationIntegrationTests
     public async Task GeneralsOnline_UpdateWithMapPack_ShouldEnforceDependency()
     {
         // Arrange
-        var clientFactory = new Mock<System.Net.Http.IHttpClientFactory>();
-        clientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(new System.Net.Http.HttpClient());
-
-        var updateServiceMock = new Mock<GeneralsOnlineUpdateService>(
-            NullLogger<GeneralsOnlineUpdateService>.Instance,
-            _manifestPoolMock.Object,
-            clientFactory.Object,
-            Mock.Of<GenHub.Core.Interfaces.Providers.IProviderDefinitionLoader>());
+        var updateServiceMock = new Mock<IGeneralsOnlineUpdateService>();
 
         updateServiceMock.Setup(x => x.CheckForUpdatesAsync(It.IsAny<CancellationToken>()))
              .ReturnsAsync(ContentUpdateCheckResult.CreateUpdateAvailable("10.0", "9.0"));
 
-        var oldGameClient = CreateManifest("1.9.generalsonline.gameclient.30hz", "9.0", ContentType.GameClient, PublisherTypeConstants.GeneralsOnline);
-        _manifestPoolMock.Setup(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient]));
+        var oldGameClient = CreateManifest("1.9.generalsonline.gameclient.30hz", "9.0", ContentType.GameClient, PublisherTypeConstants.GeneralsOnline, GameType.ZeroHour);
 
-        var newGameClient = CreateManifest("1.10.generalsonline.gameclient.30hz", "10.0", ContentType.GameClient, PublisherTypeConstants.GeneralsOnline);
-        var newMapPack = CreateManifest("1.10.generalsonline.mappack.mappack", "10.0", ContentType.MapPack, PublisherTypeConstants.GeneralsOnline);
+        var newGameClient = CreateManifest("1.10.generalsonline.gameclient.30hz", "10.0", ContentType.GameClient, PublisherTypeConstants.GeneralsOnline, GameType.ZeroHour);
+        var newMapPack = CreateManifest("1.10.generalsonline.mappack.mappack", "10.0", ContentType.MapPack, PublisherTypeConstants.GeneralsOnline, GameType.ZeroHour);
+
+        _manifestPoolMock.SetupSequence(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient]))
+            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient, newGameClient, newMapPack]))
+            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient, newGameClient, newMapPack]));
 
         _orchestratorMock.Setup(x => x.SearchAsync(It.IsAny<ContentSearchQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ContentSearchQuery q, CancellationToken t) =>
@@ -198,12 +215,18 @@ public class ReconciliationIntegrationTests
             });
 
         _orchestratorMock.Setup(x => x.AcquireContentAsync(It.IsAny<ContentSearchResult>(), It.IsAny<IProgress<ContentAcquisitionProgress>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<ContentManifest>.CreateSuccess(new ContentManifest { Id = ManifestId.Create("1.10.0.test.test") }));
-
-        _manifestPoolMock.SetupSequence(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient])) // initial
-            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient, newGameClient, newMapPack])) // after acquisition
-            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGameClient, newGameClient, newMapPack])); // dependency check
+            .ReturnsAsync((ContentSearchResult r, IProgress<ContentAcquisitionProgress> p, CancellationToken c) =>
+            {
+                var contentTypeName = r.Id == newMapPack.Id.Value ? ContentType.MapPack : ContentType.GameClient;
+                return OperationResult<ContentManifest>.CreateSuccess(
+                    new ContentManifest
+                    {
+                        Id = ManifestId.Create(r.Id),
+                        Version = r.Version,
+                        ContentType = contentTypeName,
+                        TargetGame = GameType.ZeroHour,
+                    });
+            });
 
         var profile = new GameProfile
         {
@@ -213,17 +236,21 @@ public class ReconciliationIntegrationTests
             EnabledContentIds = [],
         };
 
+        _reconciliationServiceMock.Setup(x => x.OrchestrateBulkUpdateAsync(It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult<ReconciliationResult>.CreateSuccess(new ReconciliationResult(1, 0)))
+            .Callback((IReadOnlyDictionary<string, string> mapping, bool delete, CancellationToken ct) =>
+            {
+                if (mapping.TryGetValue(oldGameClient.Id.Value, out var newId))
+                {
+                    profile.GameClient.Id = newId;
+                }
+            });
+
         _profileManagerMock.Setup(x => x.GetAllProfilesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(ProfileOperationResult<IReadOnlyList<GameProfile>>.CreateSuccess([profile]));
 
         _profileManagerMock.Setup(x => x.UpdateProfileAsync(It.IsAny<string>(), It.IsAny<UpdateProfileRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(profile));
-
-        _reconciliationServiceMock.Setup(x => x.ReconcileBulkManifestReplacementAsync(It.IsAny<Dictionary<string, string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<int>.CreateSuccess(1));
-
-        _reconciliationServiceMock.Setup(x => x.ScheduleGarbageCollectionAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult.CreateSuccess());
 
         var reconciler = new GeneralsOnlineProfileReconciler(
             NullLogger<GeneralsOnlineProfileReconciler>.Instance,
@@ -258,23 +285,21 @@ public class ReconciliationIntegrationTests
     public async Task SuperHackers_UpdateVariants_ShouldPreserveGameType()
     {
         // Arrange
-        var clientFactory = new Mock<System.Net.Http.IHttpClientFactory>();
-        clientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(new System.Net.Http.HttpClient());
-
-        var updateServiceMock = new Mock<SuperHackersUpdateService>(
-            NullLogger<SuperHackersUpdateService>.Instance,
-            _manifestPoolMock.Object,
-            clientFactory.Object);
+        var updateServiceMock = new Mock<ISuperHackersUpdateService>();
+        var settings = _userSettingsServiceMock.Object.Get();
+        settings.PreferredUpdateStrategy = UpdateStrategy.CreateNewProfile;
 
         updateServiceMock.Setup(x => x.CheckForUpdatesAsync(It.IsAny<CancellationToken>()))
              .ReturnsAsync(ContentUpdateCheckResult.CreateUpdateAvailable("20260127", "20250101"));
 
-        var oldGeneralsParams = CreateManifest("1.20250101.thesuperhackers.gameclient.generals", "20250101", ContentType.GameClient, PublisherTypeConstants.TheSuperHackers);
-        var newGeneralsParams = CreateManifest("1.20260127.thesuperhackers.gameclient.generals", "20260127", ContentType.GameClient, PublisherTypeConstants.TheSuperHackers);
-        var newZeroHourParams = CreateManifest("1.20260127.thesuperhackers.gameclient.zerohour", "20260127", ContentType.GameClient, PublisherTypeConstants.TheSuperHackers);
+        var oldGeneralsParams = CreateManifest("1.20250101.thesuperhackers.gameclient.generals", "20250101", ContentType.GameClient, PublisherTypeConstants.TheSuperHackers, GameType.Generals);
+        var newGeneralsParams = CreateManifest("1.20260127.thesuperhackers.gameclient.generals", "20260127", ContentType.GameClient, PublisherTypeConstants.TheSuperHackers, GameType.Generals);
+        var newZeroHourParams = CreateManifest("1.20260127.thesuperhackers.gameclient.zerohour", "20260127", ContentType.GameClient, PublisherTypeConstants.TheSuperHackers, GameType.ZeroHour);
 
-        _manifestPoolMock.Setup(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams]));
+        _manifestPoolMock.SetupSequence(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
+             .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams]))
+             .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams, newGeneralsParams, newZeroHourParams]))
+             .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams, newGeneralsParams, newZeroHourParams]));
 
         _orchestratorMock.Setup(x => x.SearchAsync(It.IsAny<ContentSearchQuery>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<IEnumerable<ContentSearchResult>>.CreateSuccess([
@@ -283,12 +308,16 @@ public class ReconciliationIntegrationTests
             ]));
 
         _orchestratorMock.Setup(x => x.AcquireContentAsync(It.IsAny<ContentSearchResult>(), It.IsAny<IProgress<ContentAcquisitionProgress>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<ContentManifest>.CreateSuccess(new ContentManifest { Id = ManifestId.Create("1.0.0.test.test") }));
-
-        _manifestPoolMock.SetupSequence(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
-             .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams])) // initial
-             .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams, newGeneralsParams, newZeroHourParams])) // after acquisition
-             .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([oldGeneralsParams, newGeneralsParams, newZeroHourParams])); // post-install check
+            .ReturnsAsync((ContentSearchResult r, IProgress<ContentAcquisitionProgress> p, CancellationToken c) =>
+                OperationResult<ContentManifest>.CreateSuccess(
+                    new ContentManifest
+                    {
+                        Id = ManifestId.Create(r.Id),
+                        Version = r.Version,
+                        ContentType = ContentType.GameClient,
+                        TargetGame = GameType.Generals,
+                        Publisher = new PublisherInfo { PublisherType = PublisherTypeConstants.TheSuperHackers },
+                    }));
 
         var profile = new GameProfile
         {
@@ -303,12 +332,6 @@ public class ReconciliationIntegrationTests
 
         _profileManagerMock.Setup(x => x.CreateProfileAsync(It.IsAny<CreateProfileRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(ProfileOperationResult<GameProfile>.CreateSuccess(profile));
-
-        _reconciliationServiceMock.Setup(x => x.ReconcileBulkManifestReplacementAsync(It.IsAny<Dictionary<string, string>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<int>.CreateSuccess(1));
-
-        _reconciliationServiceMock.Setup(x => x.ScheduleGarbageCollectionAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult.CreateSuccess());
 
         var reconciler = new SuperHackersProfileReconciler(
             NullLogger<SuperHackersProfileReconciler>.Instance,
@@ -326,9 +349,17 @@ public class ReconciliationIntegrationTests
 
         // Assert
         result.Success.Should().BeTrue(result.FirstError);
+
+        // Verify that the profile was updated with the generals GameClient ID (not zerohour)
+        _profileManagerMock.Verify(
+            x => x.CreateProfileAsync(
+                It.Is<CreateProfileRequest>(req => req.GameClient != null && req.GameClient.Id == newGeneralsParams.Id.Value),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Should preserve the generals GameClient ID variant");
     }
 
-    private static ContentManifest CreateManifest(string id, string version, ContentType type, string publisher)
+    private static ContentManifest CreateManifest(string id, string version, ContentType type, string publisher, GameType targetGame)
     {
         return new ContentManifest
         {
@@ -336,12 +367,8 @@ public class ReconciliationIntegrationTests
             Name = id,
             Version = version,
             ContentType = type,
-            TargetGame = GameType.ZeroHour,
+            TargetGame = targetGame,
             Publisher = new PublisherInfo { PublisherType = publisher },
         };
     }
-
-    private static CommunityOutpostDiscoverer ModellessDiscoverer() => null!;
-
-    private static CommunityOutpostResolver ModellessResolver() => null!;
 }

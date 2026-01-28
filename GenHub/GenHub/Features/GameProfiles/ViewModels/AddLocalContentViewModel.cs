@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -80,6 +81,8 @@ public partial class AddLocalContentViewModel(
         return count;
     }
 
+    private readonly string _stagingPath = Path.Combine(Path.GetTempPath(), "GenHub_Staging_" + Guid.NewGuid());
+
     private string? _originalManifestId;
 
     /// <summary>
@@ -97,7 +100,7 @@ public partial class AddLocalContentViewModel(
     /// </summary>
     public string ActionButtonText => IsEditing ? "Save Changes" : "Add to Library";
 
-    private readonly string _stagingPath = Path.Combine(Path.GetTempPath(), "GenHub_Staging_" + Guid.NewGuid());
+    private CancellationTokenSource? _cts;
 
     /// <summary>
     /// Gets or sets the name of the content.
@@ -249,6 +252,7 @@ public partial class AddLocalContentViewModel(
             ContentName = item.DisplayName ?? string.Empty;
             SelectedContentType = item.ContentType;
             SelectedGameType = item.GameType;
+            SourcePath = item.SourcePath ?? string.Empty;
 
             OnPropertyChanged(nameof(IsEditing));
             OnPropertyChanged(nameof(DialogTitle));
@@ -490,6 +494,7 @@ public partial class AddLocalContentViewModel(
     [RelayCommand]
     private void Cancel()
     {
+        _cts?.Cancel();
         CleanupStaging();
         RequestClose?.Invoke(this, false);
     }
@@ -524,6 +529,11 @@ public partial class AddLocalContentViewModel(
                 }
             });
 
+            _cts = new CancellationTokenSource();
+
+            // Preserve SourcePath metadata if available
+            // Note: We no longer write to "source.path" file to avoid polluting the content.
+            // Instead we pass the SourcePath directly to the service.
             GenHub.Core.Models.Results.OperationResult<GenHub.Core.Models.Manifest.ContentManifest> result;
 
             if (IsEditing && _originalManifestId != null)
@@ -533,7 +543,10 @@ public partial class AddLocalContentViewModel(
                     ContentName,
                     _stagingPath,
                     SelectedContentType,
-                    targetGame);
+                    targetGame,
+                    SourcePath,
+                    progress,
+                    _cts.Token);
             }
             else
             {
@@ -542,7 +555,9 @@ public partial class AddLocalContentViewModel(
                     ContentName,
                     SelectedContentType,
                     targetGame,
-                    progress);
+                    SourcePath,
+                    progress,
+                    _cts.Token);
             }
 
             if (result.Success)
@@ -550,6 +565,7 @@ public partial class AddLocalContentViewModel(
                 var manifest = result.Data;
                 CreatedContentItem = new ContentDisplayItem
                 {
+                    Id = manifest.Id.Value,
                     ManifestId = Core.Models.Manifest.ManifestId.Create(manifest.Id),
                     DisplayName = manifest.Name ?? ContentName,
                     ContentType = manifest.ContentType,
@@ -557,11 +573,13 @@ public partial class AddLocalContentViewModel(
                     InstallationType = GameInstallationType.Unknown,
                     Publisher = manifest.Publisher?.Name ?? "GenHub (Local)",
                     Version = manifest.Version ?? string.Empty,
-                    SourceId = SourcePath,
+                    SourcePath = SourcePath,
+                    SourceId = SourcePath, // Preserve legacy field for compatibility
                     IsEnabled = false,
+                    IsEditable = true,
                 };
 
-                CleanupStaging();
+                // CleanupStaging(); // Moved to finally block
                 ContentAdded?.Invoke(this, EventArgs.Empty);
                 RequestClose?.Invoke(this, true);
             }
@@ -570,6 +588,11 @@ public partial class AddLocalContentViewModel(
                 StatusMessage = $"Error: {result.FirstError}";
             }
         }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "Operation cancelled";
+            logger?.LogInformation("Content creation/update cancelled by user");
+        }
         catch (Exception ex)
         {
             StatusMessage = $"Error: {ex.Message}";
@@ -577,6 +600,9 @@ public partial class AddLocalContentViewModel(
         }
         finally
         {
+            _cts?.Dispose();
+            _cts = null;
+            CleanupStaging(); // Ensure cleanup happens on success, failure, or cancellation
             IsBusy = false;
         }
     }
@@ -758,26 +784,5 @@ public partial class AddLocalContentViewModel(
             SelectedExecutableItem = firstExe;
             logger?.LogInformation("Auto-selected first executable: {Name}", firstExe.Name);
         }
-    }
-
-    private void CloseDialog(bool result)
-    {
-        RequestClose?.Invoke(this, result);
-    }
-
-    private ContentDisplayItem ConvertToDisplayItem(Core.Models.Manifest.ContentManifest manifest)
-    {
-        return new ContentDisplayItem
-        {
-            ManifestId = Core.Models.Manifest.ManifestId.Create(manifest.Id),
-            DisplayName = manifest.Name ?? ContentName,
-            ContentType = manifest.ContentType,
-            GameType = manifest.TargetGame,
-            InstallationType = GameInstallationType.Unknown,
-            Publisher = manifest.Publisher?.Name ?? "GenHub (Local)",
-            Version = manifest.Version ?? string.Empty,
-            SourceId = SourcePath,
-            IsEnabled = false,
-        };
     }
 }

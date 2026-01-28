@@ -23,7 +23,9 @@ public static class GameSettingsConstants
         /// Low (0) maps to TextureReduction 2.
         /// </summary>
         /// <remarks>
-        /// Any TextureQuality value above 2 will be mapped to TextureReduction 0.
+        /// TextureQuality value 3 (VeryHigh) maps to TextureReduction 0.
+        /// Any TextureQuality value above 3 will also be mapped to TextureReduction 0.
+        /// Note: MaxQuality is 3, so valid values are 0 (Low), 1 (Medium), 2 (High), and 3 (VeryHigh).
         /// </remarks>
         public const int ReductionOffset = 2;
 
@@ -41,6 +43,11 @@ public static class GameSettingsConstants
         /// Texture reduction value for high quality.
         /// </summary>
         public const int TextureReductionHigh = 0;
+
+        /// <summary>
+        /// Texture reduction value for very high quality (clamped from -1).
+        /// </summary>
+        public const int TextureReductionVeryHigh = 0;
     }
 
     /// <summary>

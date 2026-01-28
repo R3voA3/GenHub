@@ -122,8 +122,8 @@ public class GameProfileManager(
                 Name = request.Name,
                 Description = request.Description ?? string.Empty,
                 GameInstallationId = request.GameInstallationId ?? string.Empty,
-                GameClient = gameClient ?? new(),
-                WorkspaceStrategy = request.PreferredStrategy,
+                GameClient = gameClient,
+                WorkspaceStrategy = request.WorkspaceStrategy,
                 EnabledContentIds = request.EnabledContentIds ?? [],
                 ToolContentId = toolContentId, // Set for Tool profiles
                 ThemeColor = request.ThemeColor,
@@ -202,9 +202,9 @@ public class GameProfileManager(
 
             profile.Description = request.Description ?? profile.Description;
             profile.EnabledContentIds = request.EnabledContentIds ?? profile.EnabledContentIds ?? [];
-            profile.GameClient = request.GameClient ?? profile.GameClient ?? new();
-            profile.WorkspaceStrategy = request.PreferredStrategy ?? profile.WorkspaceStrategy;
-            profile.LaunchOptions = request.LaunchArguments ?? profile.LaunchOptions;
+            profile.GameClient = request.GameClient ?? profile.GameClient;
+            profile.WorkspaceStrategy = request.WorkspaceStrategy ?? profile.WorkspaceStrategy;
+            profile.LaunchOptions = request.LaunchArguments ?? profile.LaunchOptions ?? [];
             profile.CustomExecutablePath = request.CustomExecutablePath ?? profile.CustomExecutablePath;
             profile.WorkingDirectory = request.WorkingDirectory ?? profile.WorkingDirectory;
             profile.IconPath = request.IconPath ?? profile.IconPath;

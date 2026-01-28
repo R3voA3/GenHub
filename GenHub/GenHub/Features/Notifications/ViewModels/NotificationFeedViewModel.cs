@@ -9,8 +9,6 @@ using GenHub.Core.Interfaces.Notifications;
 using GenHub.Core.Models.Notifications;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable SA1202, SA1507, SA1508
-
 namespace GenHub.Features.Notifications.ViewModels;
 
 /// <summary>

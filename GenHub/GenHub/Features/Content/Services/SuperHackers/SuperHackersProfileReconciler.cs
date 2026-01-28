@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Constants;
+using GenHub.Core.Helpers;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.GameProfiles;
@@ -24,14 +25,14 @@ namespace GenHub.Features.Content.Services.SuperHackers;
 /// </summary>
 public class SuperHackersProfileReconciler(
     ILogger<SuperHackersProfileReconciler> logger,
-    SuperHackersUpdateService updateService,
+    ISuperHackersUpdateService updateService,
     IContentManifestPool manifestPool,
     IContentOrchestrator contentOrchestrator,
     IContentReconciliationService reconciliationService,
     INotificationService notificationService,
     IDialogService dialogService,
     IUserSettingsService userSettingsService,
-    IGameProfileManager profileManager)
+    IGameProfileManager profileManager) : ISuperHackersProfileReconciler
 {
     /// <summary>
     /// Checks for updates and reconciles profiles if needed.
@@ -76,17 +77,17 @@ public class SuperHackersProfileReconciler(
 
             // Check if this specific version is skipped
             var settings = userSettingsService.Get();
-            if (settings.SkippedUpdateVersions.TryGetValue(PublisherTypeConstants.TheSuperHackers, out var skippedVer) &&
-                skippedVer == updateResult.LatestVersion)
+            if (settings.IsVersionSkipped(PublisherTypeConstants.TheSuperHackers, updateResult.LatestVersion ?? string.Empty))
             {
                 logger.LogInformation("[SH Reconciler] User opted to skip version {Version}. Skipping.", updateResult.LatestVersion);
                 return OperationResult<bool>.CreateSuccess(false);
             }
 
             // Determine strategy
-            UpdateStrategy strategy = settings.PreferredUpdateStrategy ?? UpdateStrategy.ReplaceCurrent;
-            bool autoUpdate = settings.AutoUpdateSuperHackers == true;
-            bool shouldDeleteOldVersions = settings.DeleteOldSuperHackersVersions;
+            var subscription = settings.GetSubscription(PublisherTypeConstants.TheSuperHackers);
+            UpdateStrategy strategy = subscription?.PreferredUpdateStrategy ?? settings.PreferredUpdateStrategy ?? UpdateStrategy.ReplaceCurrent;
+            bool autoUpdate = subscription?.AutoUpdateEnabled == true;
+            bool shouldDeleteOldVersions = subscription?.DeleteOldVersions ?? true;
 
             if (!autoUpdate)
             {
@@ -99,11 +100,16 @@ public class SuperHackersProfileReconciler(
                 if (dialogResult.Action == "Skip")
                 {
                     logger.LogInformation("[SH Reconciler] User skipped version {Version}.", updateResult.LatestVersion);
-                    await userSettingsService.TryUpdateAndSaveAsync(s =>
+
+                    if (dialogResult.IsDoNotAskAgain)
                     {
-                        s.SkippedUpdateVersions[PublisherTypeConstants.TheSuperHackers] = updateResult.LatestVersion ?? string.Empty;
-                        return true;
-                    });
+                         await userSettingsService.TryUpdateAndSaveAsync(s =>
+                         {
+                             s.SkipVersion(PublisherTypeConstants.TheSuperHackers, updateResult.LatestVersion ?? string.Empty);
+                             return true;
+                         });
+                    }
+
                     return OperationResult<bool>.CreateSuccess(false);
                 }
 
@@ -114,8 +120,13 @@ public class SuperHackersProfileReconciler(
                     logger.LogInformation("[SH Reconciler] Saving user preference for SuperHackers updates");
                     await userSettingsService.TryUpdateAndSaveAsync(s =>
                     {
-                        s.AutoUpdateSuperHackers = true;
-                        s.PreferredUpdateStrategy = strategy;
+                        s.SetAutoUpdatePreference(PublisherTypeConstants.TheSuperHackers, true);
+                        var sub = s.GetSubscription(PublisherTypeConstants.TheSuperHackers);
+                        if (sub != null)
+                        {
+                            sub.PreferredUpdateStrategy = strategy;
+                        }
+
                         return true;
                     });
                 }
@@ -166,22 +177,31 @@ public class SuperHackersProfileReconciler(
             else
             {
                 var manifestMapping = BuildManifestMapping(oldManifests, newManifests);
-                var updateProfilesResult = await reconciliationService.ReconcileBulkManifestReplacementAsync(
+                var bulkUpdateResult = await reconciliationService.OrchestrateBulkUpdateAsync(
                     manifestMapping,
+                    shouldDeleteOldVersions,
                     cancellationToken);
 
-                if (updateProfilesResult.Success) profilesUpdated = updateProfilesResult.Data;
-                else notificationService.ShowWarning("SuperHackers Update Partial", $"Some profiles could not be updated: {updateProfilesResult.FirstError}");
+                if (bulkUpdateResult.Success)
+                {
+                    profilesUpdated = bulkUpdateResult.Data.ProfilesUpdated;
+                    if (bulkUpdateResult.Data.FailedProfilesCount > 0)
+                    {
+                        notificationService.ShowWarning("SuperHackers Update Partial", $"{bulkUpdateResult.Data.FailedProfilesCount} profiles could not be updated.", NotificationDurations.VeryLong);
+                    }
+                }
+                else
+                {
+                    notificationService.ShowWarning("SuperHackers Update Partial", $"Some profiles could not be updated: {bulkUpdateResult.FirstError}", NotificationDurations.VeryLong);
+                    return OperationResult<bool>.CreateFailure($"Bulk update failed: {bulkUpdateResult.FirstError}");
+                }
             }
 
-            // Step 6: Remove old manifests
+            // Step 6: Run garbage collection (only if old versions were deleted)
             if (shouldDeleteOldVersions)
             {
-                await RemoveOldManifestsAsync(oldManifests, newManifests, cancellationToken);
+                await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
             }
-
-            // Step 7: GC
-            var gcResult = await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
 
             // Step 8: Success notification
             notificationService.ShowSuccess(
@@ -211,9 +231,12 @@ public class SuperHackersProfileReconciler(
         foreach (var oldManifest in oldManifests)
         {
             // Find corresponding new manifest by matching variant
-            var newManifest = newManifests.FirstOrDefault(n =>
-                n.ContentType == oldManifest.ContentType &&
-                MatchesByVariant(oldManifest.Id.Value, n.Id.Value));
+            var newManifest = newManifests
+                .Where(n =>
+                    n.ContentType == oldManifest.ContentType &&
+                    MatchesByVariant(oldManifest.Id.Value, n.Id.Value))
+                .OrderByDescending(n => GameVersionHelper.ParseVersionToInt(n.Version))
+                .FirstOrDefault();
 
             if (newManifest != null)
             {
@@ -233,6 +256,8 @@ public class SuperHackersProfileReconciler(
 
     private static string? ExtractVariant(string manifestId)
     {
+        if (string.IsNullOrEmpty(manifestId)) return null;
+
         var parts = manifestId.Split('.');
         if (parts.Length == 0) return null;
 
@@ -284,7 +309,17 @@ public class SuperHackersProfileReconciler(
 
             foreach (var result in searchResult.Data)
             {
-                await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
+                var acquireOp = await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
+                if (!acquireOp.Success)
+                {
+                    logger.LogError(
+                        "[SH:Reconciler] Failed to acquire content {ContentId}: {Error}",
+                        result.Id,
+                        acquireOp.FirstError);
+
+                    return OperationResult<List<ContentManifest>>.CreateFailure(
+                        $"Failed to acquire SuperHackers content {result.Id}: {acquireOp.FirstError}");
+                }
             }
 
             var allManifests = await FindSuperHackersManifestsAsync(cancellationToken);
@@ -347,9 +382,32 @@ public class SuperHackersProfileReconciler(
                 {
                    Name = $"{profile.Name} (v{newVersion})",
                    GameInstallationId = profile.GameInstallationId,
-                   PreferredStrategy = profile.WorkspaceStrategy,
-                   GameClient = profile.GameClient,
+                   WorkspaceStrategy = profile.WorkspaceStrategy,
+                   GameClient = profile.GameClient, // Default to old, override below if mapping exists
                 };
+
+                // Update GameClient if mapped
+                if (profile.GameClient != null && manifestMapping.TryGetValue(profile.GameClient.Id, out var newClientId))
+                {
+                    var matchedManifest = newManifests.FirstOrDefault(m => m.Id.Value == newClientId);
+                    if (matchedManifest != null)
+                    {
+                        cloneRequest.GameClient = new Core.Models.GameClients.GameClient
+                        {
+                            Id = matchedManifest.Id.Value,
+                            Name = matchedManifest.Name,
+                            Version = matchedManifest.Version ?? string.Empty,
+                            GameType = matchedManifest.TargetGame,
+                            SourceType = matchedManifest.ContentType,
+                            PublisherType = matchedManifest.Publisher?.PublisherType,
+                            InstallationId = profile.GameClient.InstallationId,
+                        };
+                    }
+                }
+                else if (profile.GameClient != null)
+                {
+                    logger.LogDebug("No manifest mapping found for GameClient '{ClientId}' in profile '{ProfileName}'. Preserving existing client.", profile.GameClient.Id, profile.Name);
+                }
 
                 // Calculate new content IDs
                 var newEnabledContent = new List<string>();
@@ -388,26 +446,5 @@ public class SuperHackersProfileReconciler(
         }
 
         return OperationResult<int>.CreateSuccess(createdCount);
-    }
-
-    private async Task RemoveOldManifestsAsync(
-        List<ContentManifest> oldManifests,
-        List<ContentManifest> newManifests,
-        CancellationToken cancellationToken)
-    {
-        var newManifestIds = newManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var manifest in oldManifests)
-        {
-            if (newManifestIds.Contains(manifest.Id.Value)) continue;
-
-            logger.LogInformation("[SH Reconciler] Removing old manifest: {ManifestId}", manifest.Id.Value);
-
-            var removeResult = await manifestPool.RemoveManifestAsync(manifest.Id, cancellationToken);
-            if (!removeResult.Success)
-            {
-                logger.LogWarning("[SH Reconciler] Failed to remove old manifest {ManifestId}: {Error}", manifest.Id.Value, removeResult.FirstError);
-            }
-        }
     }
 }

@@ -1,3 +1,5 @@
+#pragma warning disable SA1310 // Field names should not contain underscore
+
 namespace GenHub.Core.Constants;
 
 /// <summary>
@@ -33,7 +35,6 @@ public static class ProcessConstants
     public const int ExitCodeAccessDenied = 5;
 
     // Windows API constants
-#pragma warning disable SA1310 // Field names should not contain underscore
 
     /// <summary>
     /// Windows API constant for restoring a minimized window.
@@ -54,7 +55,6 @@ public static class ProcessConstants
     /// Windows API constant for maximizing a window.
     /// </summary>
     public const int SW_MAXIMIZE = 3;
-#pragma warning restore SA1310 // Field names should not contain underscore
 
     // Process discovery and timing constants
 

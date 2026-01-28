@@ -82,7 +82,6 @@ public class GameProfileSettingsViewModelTests
             null, // IContentManifestPool
             null, // IContentStorageService
             null, // ILocalContentService
-            null, // ILocalContentProfileReconciler
             nullLogger,
             gameSettingsLogger);
 
@@ -142,7 +141,6 @@ public class GameProfileSettingsViewModelTests
             null, // IContentManifestPool
             null, // IContentStorageService
             null, // ILocalContentService
-            null, // ILocalContentProfileReconciler
             nullLogger,
             gameSettingsLogger);
 
@@ -166,8 +164,8 @@ public class GameProfileSettingsViewModelTests
         var mockContentLoader = new Mock<IProfileContentLoader>();
         var mockManifestPool = new Mock<IContentManifestPool>();
 
-        var oldId = "mod.v1";
-        var newId = "mod.v2";
+        var oldId = "1.0.test.mod.modv1";
+        var newId = "1.0.test.mod.modv2";
 
         var oldItem = new GenHub.Features.GameProfiles.ViewModels.ContentDisplayItem
         {
@@ -230,16 +228,15 @@ public class GameProfileSettingsViewModelTests
             mockManifestPool.Object,
             null, // IContentStorageService
             null, // ILocalContentService
-            null, // ILocalContentProfileReconciler
             logger,
             NullLogger<GameSettingsViewModel>.Instance);
 
         // Directly populate the EnabledContent collection to simulate state
         vm.EnabledContent.Add(oldItem);
 
-        // Act - send the message through the messenger
-        WeakReferenceMessenger.Default.Send(new ManifestReplacedMessage(oldId, newId));
-        await Task.Delay(50); // Give time for the async handler to complete
+        // Act - call handler directly to avoid Dispatcher issues in test
+        // WeakReferenceMessenger.Default.Send(new ManifestReplacedMessage(oldId, newId));
+        await vm.HandleManifestReplacementAsync(oldId, newId);
 
         // Assert
         // 1. Old item should be gone from EnabledContent
@@ -251,6 +248,6 @@ public class GameProfileSettingsViewModelTests
         // 3. New item should be enabled
         var item = vm.EnabledContent.FirstOrDefault(c => c.ManifestId.Value == newId);
         Assert.NotNull(item);
-        Assert.True(item!.IsEnabled);
+        Assert.True(item.IsEnabled);
     }
 }

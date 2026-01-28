@@ -59,7 +59,8 @@ public class WorkspaceManagerReuseTests : IDisposable
         mockCasConfig.Setup(x => x.Value).Returns(new CasConfiguration { CasRootPath = Path.Combine(_tempPath, "cas") });
         _casTracker = new CasReferenceTracker(mockCasConfig.Object, new Mock<ILogger<CasReferenceTracker>>().Object);
 
-        _reconciler = new WorkspaceReconciler(new Mock<ILogger<WorkspaceReconciler>>().Object);
+        var mockFileOps = new Mock<IFileOperationsService>();
+        _reconciler = new WorkspaceReconciler(new Mock<ILogger<WorkspaceReconciler>>().Object, mockFileOps.Object);
 
         _manager = new WorkspaceManager(
             [_mockStrategy.Object],
@@ -94,6 +95,7 @@ public class WorkspaceManagerReuseTests : IDisposable
             Strategy = WorkspaceStrategy.HardLink,
             IsPrepared = true,
             FileCount = 1,
+            IsValid = true,
         };
         await File.WriteAllTextAsync(_metadataPath, System.Text.Json.JsonSerializer.Serialize(new[] { cachedWorkspace }));
 
@@ -170,6 +172,12 @@ public class WorkspaceManagerReuseTests : IDisposable
 
         // Ensure successful validation result for this test too, although it might skip post-validation if reused
         var successValidation = new ValidationResult(workspaceId, []);
+
+        _mockWorkspaceValidator.Setup(x => x.ValidateConfigurationAsync(It.IsAny<WorkspaceConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(successValidation);
+        _mockWorkspaceValidator.Setup(x => x.ValidatePrerequisitesAsync(It.IsAny<IWorkspaceStrategy>(), It.IsAny<WorkspaceConfiguration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(successValidation);
+
         _mockWorkspaceValidator.Setup(x => x.ValidateWorkspaceAsync(It.IsAny<WorkspaceInfo>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(OperationResult<ValidationResult>.CreateSuccess(successValidation));
 

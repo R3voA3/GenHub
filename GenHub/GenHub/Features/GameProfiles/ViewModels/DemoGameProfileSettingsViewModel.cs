@@ -34,7 +34,6 @@ public partial class DemoGameProfileSettingsViewModel : GameProfileSettingsViewM
     /// <param name="manifestPool">The content manifest pool.</param>
     /// <param name="contentStorageService">The content storage service.</param>
     /// <param name="localContentService">The local content service.</param>
-    /// <param name="localContentProfileReconciler">The local content profile reconciler.</param>
     /// <param name="logger">The logger for this view model.</param>
     /// <param name="gameSettingsLogger">The logger for the game settings view model.</param>
     public DemoGameProfileSettingsViewModel(
@@ -47,7 +46,6 @@ public partial class DemoGameProfileSettingsViewModel : GameProfileSettingsViewM
         IContentManifestPool? manifestPool,
         IContentStorageService? contentStorageService,
         ILocalContentService? localContentService,
-        Core.Interfaces.Content.ILocalContentProfileReconciler? localContentProfileReconciler,
         ILogger<GameProfileSettingsViewModel>? logger,
         ILogger<GameSettingsViewModel>? gameSettingsLogger)
         : base(
@@ -60,7 +58,6 @@ public partial class DemoGameProfileSettingsViewModel : GameProfileSettingsViewM
             manifestPool,
             contentStorageService,
             localContentService,
-            localContentProfileReconciler,
             logger,
             gameSettingsLogger)
     {

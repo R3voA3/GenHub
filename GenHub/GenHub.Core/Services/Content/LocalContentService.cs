@@ -8,6 +8,7 @@ using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Models.CommunityOutpost;
+using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
@@ -54,7 +55,8 @@ public class LocalContentService(
         string name,
         ContentType contentType,
         GameType targetGame,
-        IProgress<GenHub.Core.Models.Content.ContentStorageProgress>? progress = null,
+        string? sourcePath = null,
+        IProgress<ContentStorageProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -76,6 +78,11 @@ public class LocalContentService(
             }
 
             var sanitizedName = SanitizeForManifestId(name);
+            if (string.IsNullOrEmpty(sanitizedName))
+            {
+                sanitizedName = "generated-" + Guid.NewGuid().ToString("N")[..8];
+                logger.LogWarning("Sanitized name for '{Name}' resulted in empty string. Using fallback: {Fallback}", name, sanitizedName);
+            }
 
             logger.LogInformation(
                 "Creating local content manifest for '{Name}' from '{Path}' as {ContentType}",
@@ -93,6 +100,7 @@ public class LocalContentService(
                 targetGame: targetGame);
 
             var manifest = builder.Build();
+            manifest.SourcePath = !string.IsNullOrEmpty(sourcePath) ? sourcePath : directoryPath;
 
             // Auto-add GameInstallation dependency for GameClient content types
             // This ensures auto-resolution logic works correctly for locally added clients
@@ -116,9 +124,11 @@ public class LocalContentService(
                     var code = GenPatcherContentRegistry.IsKnownCode(name) ? name : sanitizedName;
                     var metadata = GenPatcherContentRegistry.GetMetadata(code);
 
+                    logger.LogInformation("Detected GenPatcher content code '{Code}' (Category: {Category})", code, metadata.Category);
+
                     if (metadata.Category == GenPatcherContentCategory.BaseGame)
                     {
-                        logger.LogInformation("Detected GenPatcher base game content '{Code}', using GameInstallation linking", code);
+                        logger.LogInformation("Using GameInstallation linking for legacy files in '{Code}'", code);
                         foreach (var file in manifest.Files)
                         {
                             file.SourceType = ContentSourceType.GameInstallation;
@@ -141,7 +151,7 @@ public class LocalContentService(
 
             // Set a dynamic version string based on current time to ensure
             // WorkspaceManager detects changes even if the name/ID remains the same.
-            manifest.Version = DateTime.UtcNow.ToString("yyyyMMdd.HHmmss");
+            manifest.Version = DateTime.UtcNow.ToString("yyyyMMdd.HHmmss.fff");
 
             logger.LogInformation(
                 "Created local content manifest with ID '{Id}' for '{Name}'",
@@ -169,10 +179,11 @@ public class LocalContentService(
         string name,
         string directoryPath,
         ContentType contentType,
-        GameType targetGame)
+        GameType targetGame,
+        CancellationToken cancellationToken = default)
     {
         // Forward to the main method, swapping name and directoryPath to match expected signature
-        return CreateLocalContentManifestAsync(directoryPath, name, contentType, targetGame);
+        return CreateLocalContentManifestAsync(directoryPath, name, contentType, targetGame, cancellationToken: cancellationToken);
     }
 
     /// <inheritdoc />
@@ -181,14 +192,16 @@ public class LocalContentService(
         string name,
         string directoryPath,
         ContentType contentType,
-        GameType targetGame)
+        GameType targetGame,
+        string? sourcePath = null,
+        IProgress<ContentStorageProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        CancellationToken cancellationToken = default;
         try
         {
             // 1. Create the new manifest/content
             // We do this FIRST to ensure the new content is valid before deleting the old one
-            var createResult = await CreateLocalContentManifestAsync(directoryPath, name, contentType, targetGame);
+            var createResult = await CreateLocalContentManifestAsync(directoryPath, name, contentType, targetGame, sourcePath, progress, cancellationToken);
 
             if (!createResult.Success)
             {
@@ -220,17 +233,22 @@ public class LocalContentService(
     }
 
     /// <inheritdoc />
-    public async Task<OperationResult> DeleteLocalContentAsync(string manifestId)
+    public async Task<OperationResult> DeleteLocalContentAsync(string manifestId, CancellationToken cancellationToken = default)
     {
         try
         {
             logger.LogInformation("Deleting local content with manifest ID '{ManifestId}'", manifestId);
 
-            // 1. Reconcile Profiles (Remove reference)
-            await reconciliationService.ReconcileManifestRemovalAsync(manifestId, CancellationToken.None);
+            // 1. Reconcile Profiles (Remove reference) and untrack CAS safely
+            var reconcileResult = await reconciliationService.OrchestrateBulkRemovalAsync([manifestId], cancellationToken);
+            if (!reconcileResult.Success)
+            {
+                logger.LogWarning("Failed to reconcile profiles for '{ManifestId}': {Error}", manifestId, reconcileResult.FirstError);
+                return OperationResult.CreateFailure($"Failed to reconcile profiles: {reconcileResult.FirstError}");
+            }
 
             // 2. Remove Content from storage
-            var result = await contentStorageService.RemoveContentAsync(ManifestId.Create(manifestId));
+            var result = await contentStorageService.RemoveContentAsync(ManifestId.Create(manifestId), cancellationToken: cancellationToken);
 
             if (!result.Success)
             {

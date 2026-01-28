@@ -15,6 +15,7 @@ using GenHub.Core.Models.GameInstallations;
 using GenHub.Core.Models.GameProfile;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
+using GenHub.Core.Services.Content;
 using Microsoft.Extensions.Logging;
 
 namespace GenHub.Features.GameProfiles.Services;
@@ -328,7 +329,8 @@ public class ProfileContentLoader(
         bool isEnabled = false)
     {
         // Suppress version display for local content - NEVER show version for local content
-        var isLocal = manifest.Publisher?.PublisherType?.Equals("local", StringComparison.OrdinalIgnoreCase) == true;
+        var isLocal = manifest.Publisher?.PublisherType?.Equals(LocalContentService.LocalPublisherType, StringComparison.OrdinalIgnoreCase) == true
+            || !string.IsNullOrEmpty(manifest.SourcePath);
         var normalizedVersion = isLocal ? string.Empty : displayFormatter.NormalizeVersion(manifest.Version);
         var displayName = manifest.ContentType == ContentType.GameInstallation
             ? displayFormatter.BuildDisplayName(manifest.TargetGame, normalizedVersion)
@@ -347,6 +349,9 @@ public class ProfileContentLoader(
             SourceId = sourceId ?? string.Empty,
             GameClientId = gameClientId ?? string.Empty,
             IsEnabled = isEnabled,
+            IsEditable = isLocal,
+            SourcePath = manifest.SourcePath,
+            Manifest = manifest,
         };
     }
 
@@ -389,6 +394,7 @@ public class ProfileContentLoader(
                 SourceId = item.SourceId,
                 GameClientId = item.GameClientId,
                 IsEnabled = enabledIds.Contains(item.ManifestId),
+                IsEditable = item.IsEditable,
             }));
     }
 
@@ -434,6 +440,7 @@ public class ProfileContentLoader(
             GameType = gameType,
             InstallationType = installation.InstallationType,
             Publisher = publisher,
+            IsEditable = false,
         };
     }
 
@@ -471,6 +478,7 @@ public class ProfileContentLoader(
             Publisher = publisher,
             Version = normalizedVersion,
             IsEnabled = isEnabled,
+            IsEditable = false,
         };
     }
 
@@ -665,7 +673,7 @@ public class ProfileContentLoader(
         GameInstallation? gameInstallation)
     {
         var gameClient = gameInstallation?.AvailableGameClients?
-            .FirstOrDefault(gc => gc.Id == profile.GameClient.Id);
+            .FirstOrDefault(gc => gc.Id == profile.GameClient?.Id);
 
         if (gameInstallation is not null && gameClient is not null)
         {
@@ -686,6 +694,7 @@ public class ProfileContentLoader(
                 SourceId = gameInstallation.Id,
                 GameClientId = gameClient.Id,
                 IsEnabled = true,
+                IsEditable = false,
             };
         }
 

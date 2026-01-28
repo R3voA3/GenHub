@@ -62,6 +62,9 @@ public partial class GameProfileLauncherViewModel(
     private readonly SemaphoreSlim _launchSemaphore = new(1, 1);
     private readonly System.Timers.Timer _headerCollapseTimer = new(TimeIntervals.HeaderCollapseDelayMs);
     private readonly System.Timers.Timer _headerExpansionTimer = new(TimeIntervals.HeaderExpansionDelayMs);
+    private bool _lastOperationSuccess;
+    private string? _expectedProfileIdForSuccess;
+    private bool _isCreatingNewProfile;
 
     [ObservableProperty]
     private ObservableCollection<GameProfileItemViewModel> _profiles = [];
@@ -156,6 +159,8 @@ public partial class GameProfileLauncherViewModel(
             {
                 foreach (var profile in profilesResult.Data)
                 {
+                    if (profile == null) continue;
+
                     // Use ProfileResourceService to get default paths based on game type if profile paths are missing
                     var gameTypeStr = profile.GameClient?.GameType.ToString() ?? "ZeroHour";
 
@@ -229,6 +234,13 @@ public partial class GameProfileLauncherViewModel(
     /// <param name="message">The profile created message.</param>
     public void Receive(ProfileCreatedMessage message)
     {
+        // Only mark success if we are explicitly expecting a new profile from a user action
+        if (_isCreatingNewProfile)
+        {
+            _lastOperationSuccess = true;
+            _isCreatingNewProfile = false;
+        }
+
         logger.LogInformation("Profile created notification received for {ProfileName}, adding to UI", message.Profile.Name);
 
         // Add profile to UI on UI thread
@@ -251,6 +263,13 @@ public partial class GameProfileLauncherViewModel(
     /// <param name="message">The profile updated message.</param>
     public void Receive(ProfileUpdatedMessage message)
     {
+        // Only mark success if this is the profile we were explicitly editing
+        if (message.Profile.Id == _expectedProfileIdForSuccess)
+        {
+            _lastOperationSuccess = true;
+            _expectedProfileIdForSuccess = null;
+        }
+
         logger.LogInformation("Profile updated notification received for {ProfileName}, refreshing list", message.Profile.Name);
 
         // Refresh specific profile on UI thread to preserve state of others
@@ -262,7 +281,7 @@ public partial class GameProfileLauncherViewModel(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error refreshing profile after update");
+                logger.LogError(ex, "Error refreshing profile in UI after update");
             }
         });
     }
@@ -678,7 +697,7 @@ public partial class GameProfileLauncherViewModel(
                 // Check by name AND installation ID
                 bool profileExists = existingProfiles.Data.Any(p =>
                     p.Name.Equals(profileName, StringComparison.OrdinalIgnoreCase) &&
-                    p.GameInstallationId.Equals(installation.Id, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(p.GameInstallationId, installation.Id, StringComparison.OrdinalIgnoreCase));
 
                 if (profileExists)
                 {
@@ -756,7 +775,7 @@ public partial class GameProfileLauncherViewModel(
                 GameInstallationId = installation.Id, // The actual installation GUID
                 GameClientId = gameClient.Id, // Client manifest ID
                 Description = $"Auto-created profile for {installation.InstallationType} {gameClient.Name}",
-                PreferredStrategy = preferredStrategy,
+                WorkspaceStrategy = preferredStrategy,
                 EnabledContentIds = enabledContentIds, // Both GameInstallation and GameClient manifests
                 ThemeColor = GetThemeColorForGameType(gameClient.GameType),
                 IconPath = iconPath,
@@ -805,7 +824,7 @@ public partial class GameProfileLauncherViewModel(
                 if (gameClient.IsPublisherClient && !string.IsNullOrEmpty(gameClient.PublisherType))
                 {
                     bool publisherProfileExists = existingProfiles.Data.Any(p =>
-                        p.GameInstallationId.Equals(installation.Id, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(p.GameInstallationId, installation.Id, StringComparison.OrdinalIgnoreCase) &&
                         p.GameClient != null &&
                         p.GameClient.PublisherType?.Equals(gameClient.PublisherType, StringComparison.OrdinalIgnoreCase) == true);
 
@@ -822,7 +841,7 @@ public partial class GameProfileLauncherViewModel(
                 // Standard matching: Check by name AND installation ID
                 bool profileExists = existingProfiles.Data.Any(p =>
                     p.Name.Equals(profileName, StringComparison.OrdinalIgnoreCase) &&
-                    p.GameInstallationId.Equals(installation.Id, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(p.GameInstallationId, installation.Id, StringComparison.OrdinalIgnoreCase));
 
                 if (profileExists) return true;
 
@@ -1151,11 +1170,21 @@ public partial class GameProfileLauncherViewModel(
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 };
 
-                await settingsWindow.ShowDialog(mainWindow);
+                // Use the profile parameter for the expected profile ID, not SelectedProfile which may be stale
+                _expectedProfileIdForSuccess = profile.ProfileId;
+                _lastOperationSuccess = false;
+                _isCreatingNewProfile = false;
 
-                // Refresh only the edited profile to preserve running state
-                await RefreshSingleProfileAsync(profile.ProfileId);
-                StatusMessage = "Profile updated successfully";
+                try
+                {
+                    await settingsWindow.ShowDialog(mainWindow);
+                    StatusMessage = _lastOperationSuccess ? "Profile updated successfully" : "Edit cancelled";
+                }
+                finally
+                {
+                    // Always clear flags even if an error occurred
+                    _expectedProfileIdForSuccess = null;
+                }
             }
             else
             {
@@ -1189,11 +1218,20 @@ public partial class GameProfileLauncherViewModel(
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 };
 
-                await settingsWindow.ShowDialog(mainWindow);
+                _lastOperationSuccess = false;
+                _expectedProfileIdForSuccess = null;
+                _isCreatingNewProfile = true;
 
-                // Refresh the profiles list after the window closes to show newly created profile
-                await InitializeAsync();
-                StatusMessage = "New profile window closed";
+                try
+                {
+                    await settingsWindow.ShowDialog(mainWindow);
+                    StatusMessage = _lastOperationSuccess ? "Profile created successfully" : "Profile creation cancelled";
+                }
+                finally
+                {
+                    // Always clear flags even if an error occurred
+                    _isCreatingNewProfile = false;
+                }
             }
             else
             {
@@ -1230,7 +1268,7 @@ public partial class GameProfileLauncherViewModel(
                     var loadedProfile = profileResult.Data;
 
                     // Update the existing item's status
-                    profile.UpdateWorkspaceStatus(loadedProfile.ActiveWorkspaceId, loadedProfile.WorkspaceStrategy);
+                    profile.UpdateWorkspaceStatus(loadedProfile.ActiveWorkspaceId, loadedProfile.WorkspaceStrategy ?? WorkspaceConstants.DefaultWorkspaceStrategy);
 
                     // Force UI refresh by removing and re-adding to ObservableCollection
                     var index = Profiles.IndexOf(profile);

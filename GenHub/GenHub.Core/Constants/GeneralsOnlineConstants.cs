@@ -90,6 +90,9 @@ public static class GeneralsOnlineConstants
     /// <summary>Manifest name suffix for QuickMatch MapPack.</summary>
     public const string QuickMatchMapPackSuffix = "quickmatch-maps";
 
+    /// <summary>The default tick rate variant suffix.</summary>
+    public const string DefaultVariantSuffix = Variant60HzSuffix;
+
     /// <summary>Display name for QuickMatch MapPack.</summary>
     public const string QuickMatchMapPackDisplayName = "GeneralsOnline QuickMatch Maps";
 

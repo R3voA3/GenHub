@@ -64,7 +64,7 @@ public static class ContentPipelineModule
     private static void AddCoreServices(IServiceCollection services)
     {
         // Register content orchestrator
-        services.AddSingleton<IContentOrchestrator, ContentOrchestrator>();
+        services.AddScoped<IContentOrchestrator, ContentOrchestrator>();
 
         // Register core hash provider
         var hashProvider = new Sha256HashProvider();
@@ -122,21 +122,21 @@ public static class ContentPipelineModule
         services.AddTransient<ILocalContentService, LocalContentService>();
 
         // Register Local Content Profile Reconciler
-        services.AddTransient<ILocalContentProfileReconciler, LocalContentProfileReconciler>();
+        services.AddScoped<ILocalContentProfileReconciler, LocalContentProfileReconciler>();
 
         // Register Unified Content Reconciliation Service
         services.AddScoped<IContentReconciliationService, ContentReconciliationService>();
 
         // Reconciliation infrastructure
-        services.AddSingleton<IContentReconciliationOrchestrator, ContentReconciliationOrchestrator>();
+        services.AddScoped<IContentReconciliationOrchestrator, ContentReconciliationOrchestrator>();
         services.AddSingleton<ICasLifecycleManager, CasLifecycleManager>();
 
         // Audit log - needs application data path
         services.AddSingleton<IReconciliationAuditLog>(sp =>
         {
             var appConfig = sp.GetRequiredService<IAppConfiguration>();
-            var logger = sp.GetRequiredService<ILogger<GenHub.Features.Content.Services.Reconciliation.FileBasedReconciliationAuditLog>>();
-            return new GenHub.Features.Content.Services.Reconciliation.FileBasedReconciliationAuditLog(appConfig.GetConfiguredDataPath(), logger);
+            var logger = sp.GetRequiredService<ILogger<FileBasedReconciliationAuditLog>>();
+            return new FileBasedReconciliationAuditLog(appConfig.GetConfiguredDataPath(), logger);
         });
     }
 
@@ -171,10 +171,11 @@ public static class ContentPipelineModule
         services.AddTransient<IPublisherManifestFactory>(sp => sp.GetRequiredService<SuperHackersManifestFactory>());
 
         // Register SuperHackers update service
-        services.AddSingleton<SuperHackersUpdateService>();
+        services.AddScoped<SuperHackersUpdateService>();
+        services.AddScoped<ISuperHackersUpdateService>(sp => sp.GetRequiredService<SuperHackersUpdateService>());
 
-        // Register SuperHackers profile reconciler
-        services.AddSingleton<SuperHackersProfileReconciler>();
+        services.AddScoped<SuperHackersProfileReconciler>();
+        services.AddScoped<ISuperHackersProfileReconciler>(sp => sp.GetRequiredService<SuperHackersProfileReconciler>());
 
         // Register GitHub generic manifest factory
         services.AddTransient<GitHubManifestFactory>();
@@ -205,10 +206,12 @@ public static class ContentPipelineModule
         services.AddTransient<IPublisherManifestFactory>(sp => sp.GetRequiredService<GeneralsOnlineManifestFactory>());
 
         // Register Generals Online update service
-        services.AddSingleton<GeneralsOnlineUpdateService>();
+        services.AddScoped<GeneralsOnlineUpdateService>();
+        services.AddScoped<IGeneralsOnlineUpdateService>(sp => sp.GetRequiredService<GeneralsOnlineUpdateService>());
 
         // Register Generals Online profile reconciler
-        services.AddSingleton<IGeneralsOnlineProfileReconciler, GeneralsOnlineProfileReconciler>();
+        services.AddScoped<GeneralsOnlineProfileReconciler>();
+        services.AddScoped<IGeneralsOnlineProfileReconciler>(sp => sp.GetRequiredService<GeneralsOnlineProfileReconciler>());
     }
 
     /// <summary>
@@ -224,6 +227,7 @@ public static class ContentPipelineModule
         services.AddTransient<IContentDiscoverer, CommunityOutpostDiscoverer>();
 
         // Register Community Outpost resolver
+        services.AddTransient<CommunityOutpostResolver>();
         services.AddTransient<IContentResolver, CommunityOutpostResolver>();
 
         // Register Community Outpost deliverer
@@ -233,10 +237,10 @@ public static class ContentPipelineModule
         services.AddTransient<CommunityOutpostManifestFactory>();
 
         // Register Community Outpost services
-        services.AddSingleton<CommunityOutpostDiscoverer>();
-        services.AddSingleton<CommunityOutpostResolver>();
-        services.AddSingleton<CommunityOutpostUpdateService>();
-        services.AddSingleton<ICommunityOutpostProfileReconciler, CommunityOutpostProfileReconciler>(); // Register Reconciler
+        services.AddScoped<CommunityOutpostUpdateService>();
+        services.AddScoped<ICommunityOutpostUpdateService>(sp => sp.GetRequiredService<CommunityOutpostUpdateService>());
+        services.AddScoped<CommunityOutpostProfileReconciler>(); // Register Reconciler
+        services.AddScoped<ICommunityOutpostProfileReconciler>(sp => sp.GetRequiredService<CommunityOutpostProfileReconciler>());
         services.AddTransient<IPublisherManifestFactory, CommunityOutpostManifestFactory>();
     }
 
@@ -320,7 +324,7 @@ public static class ContentPipelineModule
         services.AddTransient<PublisherManifestFactoryResolver>();
 
         // Register content pipeline factory for provider-based component lookup
-        services.AddSingleton<IContentPipelineFactory, ContentPipelineFactory>();
+        services.AddScoped<IContentPipelineFactory, ContentPipelineFactory>();
         services.AddTransient<PublisherCardViewModel>();
 
         // Register content orchestrator and validator

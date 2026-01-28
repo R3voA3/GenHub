@@ -1,32 +1,36 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Threading;
-using System.Threading.Tasks;
 using GenHub.Core.Constants;
+using GenHub.Core.Interfaces.Workspace;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Workspace;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace GenHub.Features.Workspace;
 
 /// <summary>
 /// Analyzes workspace state and determines delta operations for intelligent reconciliation.
 /// </summary>
-public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger)
+public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger, IFileOperationsService fileOperations)
 {
+    private static readonly long SmallFileThreshold = 5 * 1024 * 1024; // 5MB
+
     /// <summary>
     /// Analyzes workspace and determines what operations are needed to reconcile it with manifests.
     /// </summary>
     /// <param name="workspaceInfo">Existing workspace information (null if new workspace).</param>
     /// <param name="configuration">Target workspace configuration with manifests.</param>
+    /// <param name="forceFullVerification">If true, forces full verification of all files including hashes.</param>
     /// <returns>List of delta operations needed to reconcile the workspace.</returns>
     public async Task<List<WorkspaceDelta>> AnalyzeWorkspaceDeltaAsync(
         WorkspaceInfo? workspaceInfo,
-        WorkspaceConfiguration configuration)
+        WorkspaceConfiguration configuration,
+        bool forceFullVerification = false)
     {
         var deltas = new List<WorkspaceDelta>();
         var workspacePath = Path.Combine(configuration.WorkspaceRootPath, configuration.Id);
@@ -136,7 +140,7 @@ public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger)
             else
             {
                 // File exists - check if it needs updating
-                var needsUpdate = await FileNeedsUpdateAsync(fullPath, manifestFile);
+                var needsUpdate = await FileNeedsUpdateAsync(fullPath, manifestFile, forceFullVerification);
                 if (needsUpdate)
                 {
                     deltas.Add(new WorkspaceDelta
@@ -195,7 +199,8 @@ public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger)
     /// </summary>
     private async Task<bool> FileNeedsUpdateAsync(
         string filePath,
-        ManifestFile manifestFile)
+        ManifestFile manifestFile,
+        bool forceFullVerification = false)
     {
         try
         {
@@ -211,7 +216,7 @@ public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger)
                 var targetPath = fileInfo.LinkTarget;
                 if (!Path.IsPathRooted(targetPath))
                 {
-                    targetPath = Path.Combine(Path.GetDirectoryName(filePath) ?? string.Empty, targetPath);
+                    targetPath = Path.Combine(Path.GetDirectoryName(filePath) ?? Path.GetPathRoot(filePath) ?? string.Empty, targetPath);
                 }
 
                 // Broken symlink needs update
@@ -234,7 +239,17 @@ public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger)
                     return true;
                 }
 
-                return false; // Valid symlink with size-matching target
+                if (forceFullVerification && !string.IsNullOrEmpty(manifestFile.Hash))
+                {
+                    var hashMatches = await fileOperations.VerifyFileHashAsync(targetPath, manifestFile.Hash, CancellationToken.None);
+                    if (!hashMatches)
+                    {
+                        logger.LogDebug("Symlink target hash mismatch for {FilePath}: expected {Expected}", filePath, manifestFile.Hash);
+                        return true;
+                    }
+                }
+
+                return false; // Valid symlink with size-matching target (and passing hash if forceFullVerification)
             }
 
             // Regular file - use size-based comparison for performance
@@ -249,37 +264,21 @@ public class WorkspaceReconciler(ILogger<WorkspaceReconciler> logger)
                 return true;
             }
 
-            // If we have a hash, verify it regardless of file size
-            // This ensures correctness even if size is identical
-            if (!string.IsNullOrEmpty(manifestFile.Hash))
+            if (!string.IsNullOrEmpty(manifestFile.Hash) && (forceFullVerification || fileInfo.Length < SmallFileThreshold))
             {
-                using var stream = File.OpenRead(filePath);
-                using var sha256 = SHA256.Create();
-                var hashBytes = await sha256.ComputeHashAsync(stream);
-                var hash = BitConverter.ToString(hashBytes).Replace("-", string.Empty).ToLowerInvariant();
+                var hashMatches = await fileOperations.VerifyFileHashAsync(filePath, manifestFile.Hash, CancellationToken.None);
 
-                if (!string.Equals(hash, manifestFile.Hash, StringComparison.OrdinalIgnoreCase))
+                if (!hashMatches)
                 {
                     logger.LogDebug(
-                        "Hash mismatch for {FilePath}: expected {Expected}, got {Actual}",
+                        "Hash mismatch for {FilePath}: expected {Expected}",
                         filePath,
-                        manifestFile.Hash,
-                        hash);
+                        manifestFile.Hash);
                     return true;
                 }
-
-                logger.LogDebug(
-                    "Hash verification passed for {FilePath}",
-                    filePath);
-            }
-            else
-            {
-                logger.LogDebug(
-                    "Skipping hash verification for {FilePath}, no hash provided in manifest",
-                    filePath);
             }
 
-            return false; // File appears to be current
+            return false; // File appears to be current (size matches and hash check passed/skipped)
         }
         catch (Exception ex)
         {

@@ -26,7 +26,7 @@ namespace GenHub.Features.Content.Services.CommunityOutpost;
 /// </summary>
 public class CommunityOutpostProfileReconciler(
     ILogger<CommunityOutpostProfileReconciler> logger,
-    CommunityOutpostUpdateService updateService,
+    ICommunityOutpostUpdateService updateService,
     IContentManifestPool manifestPool,
     IContentOrchestrator contentOrchestrator,
     IContentReconciliationService reconciliationService,
@@ -74,17 +74,17 @@ public class CommunityOutpostProfileReconciler(
 
             // Check if this specific version is skipped
             var settings = userSettingsService.Get();
-            if (settings.SkippedUpdateVersions.TryGetValue(CommunityOutpostConstants.PublisherType, out var skippedVer) &&
-                skippedVer == updateResult.LatestVersion)
+            if (settings.IsVersionSkipped(CommunityOutpostConstants.PublisherType, updateResult.LatestVersion ?? string.Empty))
             {
                 logger.LogInformation("[CO Reconciler] User opted to skip version {Version}. Skipping.", updateResult.LatestVersion);
                 return OperationResult<bool>.CreateSuccess(false);
             }
 
             // Determine strategy
-            UpdateStrategy strategy = settings.PreferredUpdateStrategy ?? UpdateStrategy.ReplaceCurrent;
-            bool autoUpdate = settings.AutoUpdateCommunityPatch == true;
-            bool shouldDeleteOldVersions = settings.DeleteOldCommunityPatchVersions;
+            var subscription = settings.GetSubscription(CommunityOutpostConstants.PublisherType);
+            UpdateStrategy strategy = subscription?.PreferredUpdateStrategy ?? settings.PreferredUpdateStrategy ?? UpdateStrategy.ReplaceCurrent;
+            bool autoUpdate = subscription?.AutoUpdateEnabled == true;
+            bool shouldDeleteOldVersions = subscription?.DeleteOldVersions ?? true;
 
             if (!autoUpdate)
             {
@@ -97,11 +97,16 @@ public class CommunityOutpostProfileReconciler(
                 if (dialogResult.Action == "Skip")
                 {
                     logger.LogInformation("[CO Reconciler] User skipped version {Version}.", updateResult.LatestVersion);
-                    await userSettingsService.TryUpdateAndSaveAsync(s =>
+
+                    if (dialogResult.IsDoNotAskAgain)
                     {
-                        s.SkippedUpdateVersions[CommunityOutpostConstants.PublisherType] = updateResult.LatestVersion ?? string.Empty;
-                        return true;
-                    });
+                        await userSettingsService.TryUpdateAndSaveAsync(s =>
+                        {
+                            s.SkipVersion(CommunityOutpostConstants.PublisherType, updateResult.LatestVersion ?? string.Empty);
+                            return true;
+                        });
+                    }
+
                     return OperationResult<bool>.CreateSuccess(false);
                 }
 
@@ -112,8 +117,13 @@ public class CommunityOutpostProfileReconciler(
                     logger.LogInformation("[CO Reconciler] Saving user preference for Community Patch updates");
                     await userSettingsService.TryUpdateAndSaveAsync(s =>
                     {
-                        s.AutoUpdateCommunityPatch = true;
-                        s.PreferredUpdateStrategy = strategy;
+                        s.SetAutoUpdatePreference(CommunityOutpostConstants.PublisherType, true);
+                        var sub = s.GetSubscription(CommunityOutpostConstants.PublisherType);
+                        if (sub != null)
+                        {
+                            sub.PreferredUpdateStrategy = strategy;
+                        }
+
                         return true;
                     });
                 }
@@ -170,22 +180,31 @@ public class CommunityOutpostProfileReconciler(
             {
                 // ReplaceCurrent
                 var manifestMapping = BuildManifestMapping(oldManifests, newManifests);
-                var updateProfilesResult = await reconciliationService.ReconcileBulkManifestReplacementAsync(
+                var bulkUpdateResult = await reconciliationService.OrchestrateBulkUpdateAsync(
                     manifestMapping,
+                    shouldDeleteOldVersions,
                     cancellationToken);
 
-                if (updateProfilesResult.Success) profilesUpdated = updateProfilesResult.Data;
-                else notificationService.ShowWarning("Community Patch Update Partial", $"Some profiles could not be updated: {updateProfilesResult.FirstError}");
-
-                // Remove old manifests if configured
-                if (shouldDeleteOldVersions)
+                if (bulkUpdateResult.Success)
                 {
-                    await RemoveOldManifestsAsync(oldManifests, newManifests, cancellationToken);
+                    profilesUpdated = bulkUpdateResult.Data.ProfilesUpdated;
+                    if (bulkUpdateResult.Data.FailedProfilesCount > 0)
+                    {
+                        notificationService.ShowWarning("Community Patch Update Partial", $"{bulkUpdateResult.Data.FailedProfilesCount} profiles could not be updated. Check logs for details.");
+                    }
+                }
+                else
+                {
+                    notificationService.ShowWarning("Community Patch Update Partial", $"Some profiles could not be updated: {bulkUpdateResult.FirstError}");
+                    return OperationResult<bool>.CreateFailure($"Bulk update failed: {bulkUpdateResult.FirstError}");
                 }
             }
 
-            // Step 6: Run garbage collection
-            await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
+            // Step 6: Run garbage collection (only if old versions were deleted)
+            if (shouldDeleteOldVersions)
+            {
+                await reconciliationService.ScheduleGarbageCollectionAsync(false, cancellationToken);
+            }
 
             // Step 7: Show success notification
             notificationService.ShowSuccess(
@@ -199,6 +218,11 @@ public class CommunityOutpostProfileReconciler(
                 strategy);
 
             return OperationResult<bool>.CreateSuccess(true);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("[CO Reconciler] Reconciliation cancelled");
+            throw;
         }
         catch (Exception ex)
         {
@@ -277,7 +301,17 @@ public class CommunityOutpostProfileReconciler(
 
             foreach (var result in searchResult.Data)
             {
-                await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
+                var acquireOp = await contentOrchestrator.AcquireContentAsync(result, progress: null, cancellationToken);
+                if (!acquireOp.Success)
+                {
+                    logger.LogError(
+                        "[CO:Reconciler] Failed to acquire content {ContentId}: {Error}",
+                        result.Id,
+                        acquireOp.FirstError);
+
+                    return OperationResult<List<ContentManifest>>.CreateFailure(
+                        $"Failed to acquire Community Patch content {result.Id}: {acquireOp.FirstError}");
+                }
             }
 
             var allManifests = await FindCommunityOutpostManifestsAsync(cancellationToken);
@@ -295,34 +329,14 @@ public class CommunityOutpostProfileReconciler(
 
             return OperationResult<List<ContentManifest>>.CreateSuccess(newManifests);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "[CO Reconciler] Failed to acquire latest version");
             return OperationResult<List<ContentManifest>>.CreateFailure($"Failed to acquire latest version: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Removes old Community Outpost manifests from the manifest pool.
-    /// </summary>
-    private async Task RemoveOldManifestsAsync(
-        List<ContentManifest> oldManifests,
-        List<ContentManifest> newManifests,
-        CancellationToken cancellationToken)
-    {
-        var newManifestIds = newManifests.Select(m => m.Id.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var manifest in oldManifests)
-        {
-            if (newManifestIds.Contains(manifest.Id.Value)) continue;
-
-            logger.LogInformation("[CO Reconciler] Removing old manifest: {ManifestId}", manifest.Id.Value);
-
-            var removeResult = await manifestPool.RemoveManifestAsync(manifest.Id, cancellationToken);
-            if (!removeResult.Success)
-            {
-                logger.LogWarning("[CO Reconciler] Failed to remove old manifest {ManifestId}: {Error}", manifest.Id.Value, removeResult.FirstError);
-            }
         }
     }
 
@@ -357,7 +371,7 @@ public class CommunityOutpostProfileReconciler(
                 {
                    Name = $"{profile.Name} (v{newVersion})",
                    GameInstallationId = profile.GameInstallationId,
-                   PreferredStrategy = profile.WorkspaceStrategy,
+                   WorkspaceStrategy = profile.WorkspaceStrategy,
                    GameClient = profile.GameClient,
                 };
 
@@ -390,6 +404,10 @@ public class CommunityOutpostProfileReconciler(
                 {
                     logger.LogError("[CO Reconciler] Failed to create new profile for update: {Error}", createResult.FirstError);
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

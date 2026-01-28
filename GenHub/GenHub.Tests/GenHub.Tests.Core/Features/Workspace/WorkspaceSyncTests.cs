@@ -51,13 +51,13 @@ public class WorkspaceSyncTests
             new TestStrategy(_fileOperationsMock.Object),
         ];
 
-        // We need a real CasReferenceTracker for to manager constructor
+        // We need a real CasReferenceTracker for the manager constructor
         var casConfig = new CasConfiguration { CasRootPath = Path.Combine(_tempPath, "CAS") };
         var optionsMock = new Mock<IOptions<CasConfiguration>>();
         optionsMock.Setup(x => x.Value).Returns(casConfig);
         var casTracker = new CasReferenceTracker(optionsMock.Object, NullLogger<CasReferenceTracker>.Instance);
 
-        var reconciler = new WorkspaceReconciler(NullLogger<WorkspaceReconciler>.Instance);
+        var reconciler = new WorkspaceReconciler(NullLogger<WorkspaceReconciler>.Instance, _fileOperationsMock.Object);
 
         _workspaceManager = new WorkspaceManager(
             strategies,
@@ -77,7 +77,7 @@ public class WorkspaceSyncTests
     /// <summary>
     /// Should sync correctly when switching content.
     /// </summary>
-    /// <returns>A task representing to asynchronous operation.</returns>
+    /// <returns>A task representing the asynchronous operation.</returns>
     [Fact]
     public async Task PrepareWorkspace_SwitchingContent_ShouldSyncCorrectly()
     {
@@ -121,7 +121,6 @@ public class WorkspaceSyncTests
             Strategy = WorkspaceConstants.DefaultWorkspaceStrategy,
         };
 
-        // Elements should be separated by blank line
         var resultA = await _workspaceManager.PrepareWorkspaceAsync(configA);
         Assert.True(resultA.Success);
         Assert.Contains(manifestA.Id.Value, resultA.Data.ManifestIds);
@@ -141,7 +140,6 @@ public class WorkspaceSyncTests
             Strategy = WorkspaceConstants.DefaultWorkspaceStrategy,
         };
 
-        // Elements should be separated by blank line
         var resultB = await _workspaceManager.PrepareWorkspaceAsync(configB);
         Assert.True(resultB.Success);
         Assert.Contains(manifestB.Id.Value, resultB.Data.ManifestIds);
@@ -181,11 +179,8 @@ public class WorkspaceSyncTests
         {
             var workspacePath = Path.Combine(configuration.WorkspaceRootPath, configuration.Id);
 
-            // Elements should be separated by blank line
             if (configuration.ForceRecreate)
             {
-                Console.Out.WriteLine($"[DEBUG] Strategy: ForceRecreate is TRUE for {configuration.Id}");
-
                 // Clean directory only when forced
                 if (Directory.Exists(workspacePath))
                 {
@@ -195,8 +190,6 @@ public class WorkspaceSyncTests
             }
             else
             {
-                Console.Out.WriteLine($"[DEBUG] Strategy: ForceRecreate is FALSE for {configuration.Id}");
-
                 if (!Directory.Exists(workspacePath))
                 {
                     Directory.CreateDirectory(workspacePath);
@@ -207,7 +200,7 @@ public class WorkspaceSyncTests
                     var allowedFiles = configuration.Manifests
                         .SelectMany(m => m.Files)
                         .Select(f => Path.Combine(workspacePath, f.RelativePath))
-                        .ToHashSet();
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
                     foreach (var file in Directory.GetFiles(workspacePath, "*", SearchOption.AllDirectories))
                     {
@@ -224,11 +217,13 @@ public class WorkspaceSyncTests
             {
                 foreach (var f in m.Files)
                 {
-                    File.WriteAllText(Path.Combine(workspacePath, f.RelativePath), "content");
+                    var filePath = Path.Combine(workspacePath, f.RelativePath);
+                    var dir = Path.GetDirectoryName(filePath);
+                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                    File.WriteAllText(filePath, "content");
                 }
             }
 
-            // Elements should be separated by blank line
             return Task.FromResult(new WorkspaceInfo
             {
                 Id = configuration.Id,

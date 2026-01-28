@@ -9,13 +9,13 @@ using GenHub.Core.Models.Common;
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Dialogs;
 using GenHub.Core.Models.Enums;
+using GenHub.Core.Models.GameProfile;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
 using GenHub.Core.Models.Results.Content;
 using GenHub.Features.Content.Services.GeneralsOnline;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using System.Net.Http;
 
 namespace GenHub.Tests.Core.Features.Content.Services.GeneralsOnline;
 
@@ -24,7 +24,7 @@ namespace GenHub.Tests.Core.Features.Content.Services.GeneralsOnline;
 /// </summary>
 public class GeneralsOnlineProfileReconcilerTests
 {
-    private readonly Mock<GeneralsOnlineUpdateService> _updateServiceMock;
+    private readonly Mock<IGeneralsOnlineUpdateService> _updateServiceMock;
     private readonly Mock<IContentManifestPool> _manifestPoolMock;
     private readonly Mock<IContentOrchestrator> _contentOrchestratorMock;
     private readonly Mock<IContentReconciliationService> _reconciliationServiceMock;
@@ -42,11 +42,7 @@ public class GeneralsOnlineProfileReconcilerTests
     {
         _manifestPoolMock = new Mock<IContentManifestPool>();
 
-        _updateServiceMock = new Mock<GeneralsOnlineUpdateService>(
-            NullLogger<GeneralsOnlineUpdateService>.Instance,
-            _manifestPoolMock.Object,
-            new Mock<IHttpClientFactory>().Object,
-            new Mock<IProviderDefinitionLoader>().Object);
+        _updateServiceMock = new Mock<IGeneralsOnlineUpdateService>();
 
         _contentOrchestratorMock = new Mock<IContentOrchestrator>();
         _reconciliationServiceMock = new Mock<IContentReconciliationService>();
@@ -54,6 +50,14 @@ public class GeneralsOnlineProfileReconcilerTests
         _dialogServiceMock = new Mock<IDialogService>();
         _userSettingsServiceMock = new Mock<IUserSettingsService>();
         _profileManagerMock = new Mock<IGameProfileManager>();
+
+        _reconciliationServiceMock.Setup(x => x.OrchestrateBulkUpdateAsync(It.IsAny<IReadOnlyDictionary<string, string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult<ReconciliationResult>.CreateSuccess(new ReconciliationResult(0, 0)));
+        _reconciliationServiceMock.Setup(x => x.ScheduleGarbageCollectionAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult.CreateSuccess());
+
+        _profileManagerMock.Setup(x => x.GetAllProfilesAsync(It.IsAny<CancellationToken>()))
+            .Returns(Task.FromResult(ProfileOperationResult<IReadOnlyList<GameProfile>>.CreateSuccess([])));
 
         _reconciler = new GeneralsOnlineProfileReconciler(
             NullLogger<GeneralsOnlineProfileReconciler>.Instance,
@@ -79,8 +83,12 @@ public class GeneralsOnlineProfileReconcilerTests
         _updateServiceMock.Setup(x => x.CheckForUpdatesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(ContentUpdateCheckResult.CreateUpdateAvailable(latestVersion, "0.0.1"));
 
+        var settings = new UserSettings();
+        settings.SetAutoUpdatePreference(GeneralsOnlineConstants.PublisherType, true);
+        settings.GetOrCreateSubscription(GeneralsOnlineConstants.PublisherType).DeleteOldVersions = true;
+
         _userSettingsServiceMock.Setup(x => x.Get())
-            .Returns(new UserSettings { AutoUpdateGeneralsOnline = true, DeleteOldGeneralsOnlineVersions = true });
+            .Returns(settings);
 
         // Setup mocked local manifest that should be ignored
         var localManifest = new ContentManifest
@@ -91,8 +99,18 @@ public class GeneralsOnlineProfileReconcilerTests
             Publisher = new PublisherInfo { PublisherType = "local" },
         };
 
-        _manifestPoolMock.Setup(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([localManifest]));
+        var newManifest = new ContentManifest
+        {
+            Id = ManifestId.Create("1.0.generalsonline.gameclient.newversion"),
+            Version = latestVersion,
+            Publisher = new PublisherInfo { PublisherType = GeneralsOnlineConstants.PublisherType },
+        };
+
+        // First call returns only local (excluded by filter), second call returns both
+        _manifestPoolMock.SetupSequence(x => x.GetAllManifestsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([localManifest]))
+            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([localManifest, newManifest]))
+            .ReturnsAsync(OperationResult<IEnumerable<ContentManifest>>.CreateSuccess([localManifest, newManifest]));
 
         // Setup mock acquisition (simplified for test)
         _contentOrchestratorMock.Setup(
@@ -102,16 +120,18 @@ public class GeneralsOnlineProfileReconcilerTests
                 new() { Name = "New GO Version", Version = latestVersion },
             ]));
 
-        _contentOrchestratorMock.Setup(x => x.AcquireContentAsync(It.IsAny<ContentSearchResult>(), null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OperationResult<ContentManifest>.CreateSuccess(new ContentManifest { Id = ManifestId.Create("1.0.generalsonline.gameclient.newversion"), Version = latestVersion }));
+        _contentOrchestratorMock.Setup(x => x.AcquireContentAsync(It.IsAny<ContentSearchResult>(), It.IsAny<IProgress<ContentAcquisitionProgress>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OperationResult<ContentManifest>.CreateSuccess(newManifest));
 
         // Act
-        await _reconciler.CheckAndReconcileIfNeededAsync("profile1", CancellationToken.None);
+        var result = await _reconciler.CheckAndReconcileIfNeededAsync("profile1", CancellationToken.None);
 
         // Assert
+        Assert.True(result.Success, $"Reconciliation failed: {result.FirstError}");
+
         // Verify that RemoveManifestAsync was NEVER called for the local manifest
         _manifestPoolMock.Verify(
-            x => x.RemoveManifestAsync(localManifest.Id, It.IsAny<CancellationToken>()),
+            x => x.RemoveManifestAsync(localManifest.Id, It.IsAny<bool>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "Local manifest should not be removed during reconciliation");
     }

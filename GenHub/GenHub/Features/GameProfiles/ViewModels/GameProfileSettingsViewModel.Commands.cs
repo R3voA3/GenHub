@@ -365,7 +365,7 @@ public partial class GameProfileSettingsViewModel
                     Description = Description,
                     GameInstallationId = SelectedGameInstallation.SourceId,
                     GameClientId = SelectedGameInstallation.GameClientId,
-                    PreferredStrategy = SelectedWorkspaceStrategy,
+                    WorkspaceStrategy = SelectedWorkspaceStrategy,
                     EnabledContentIds = enabledContentIds,
                     CommandLineArguments = CommandLineArguments,
                     IconPath = IconPath,
@@ -408,7 +408,7 @@ public partial class GameProfileSettingsViewModel
                     ThemeColor = ColorValue,
                     GameInstallationId = SelectedGameInstallation?.SourceId,
 
-                    PreferredStrategy = _originalWorkspaceStrategy.HasValue && SelectedWorkspaceStrategy != _originalWorkspaceStrategy.Value
+                    WorkspaceStrategy = _originalWorkspaceStrategy.HasValue && SelectedWorkspaceStrategy != _originalWorkspaceStrategy.Value
                         ? SelectedWorkspaceStrategy
                         : null,
                     EnabledContentIds = enabledContentIds,
@@ -656,9 +656,9 @@ public partial class GameProfileSettingsViewModel
     {
         try
         {
-            if (_localContentService == null)
+            if (_localContentService == null || _contentStorageService == null)
             {
-                StatusMessage = "Local content service unavailable";
+                StatusMessage = "Content services unavailable";
                 return;
             }
 
@@ -690,8 +690,8 @@ public partial class GameProfileSettingsViewModel
                 StatusMessage = $"Added {contentItem.DisplayName}";
                 await EnableContentInternal(contentItem, bypassLoadingGuard: true);
 
-                // Refresh filters in case this was the first item of its type
-                await RefreshVisibleFiltersAsync();
+                // Refresh filters and content to ensure new type appears and list updates
+                await RefreshFiltersAndContentAsync();
 
                 _localNotificationService?.ShowSuccess(
                      "Content Added",
@@ -712,9 +712,9 @@ public partial class GameProfileSettingsViewModel
 
         try
         {
-            if (_localContentService == null)
+            if (_localContentService == null || _contentStorageService == null)
             {
-                StatusMessage = "Local content service unavailable";
+                StatusMessage = "Content services unavailable";
                 return;
             }
 
@@ -761,13 +761,13 @@ public partial class GameProfileSettingsViewModel
                     AvailableContent.Remove(inAvailable);
                 }
 
-                // If GameClient ID changed and this was our GameClient, synchronize SelectedGameInstallation.
-                if (contentItem.ContentType == ContentType.GameClient &&
+                // If GameClient or GameInstallation ID changed and this was our selection, synchronize SelectedGameInstallation.
+                if ((contentItem.ContentType == ContentType.GameClient || contentItem.ContentType == ContentType.GameInstallation) &&
                     SelectedGameInstallation != null &&
                     SelectedGameInstallation.ManifestId.Value == oldId)
                 {
                     SelectedGameInstallation = updatedItem;
-                    _logger?.LogInformation("Synchronized SelectedGameInstallation with newly edited GameClient");
+                    _logger?.LogInformation("Synchronized SelectedGameInstallation with newly edited {ContentType}", contentItem.ContentType);
                 }
 
                 // Reload content and filters to reflect all changes (e.g. type changes, category updates).

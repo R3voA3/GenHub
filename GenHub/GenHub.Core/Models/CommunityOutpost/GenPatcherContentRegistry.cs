@@ -450,7 +450,6 @@ public static class GenPatcherContentRegistry
         // Determine target game based on version
         // 108 = Generals 1.08, 104 = Zero Hour 1.04
         var isGenerals = versionNumber == 8; // 1.08 is Generals
-        var isZeroHour = versionNumber == 4; // 1.04 is Zero Hour
 
         var targetGame = isGenerals ? GameType.Generals : GameType.ZeroHour;
         var version = $"1.0{versionNumber}";

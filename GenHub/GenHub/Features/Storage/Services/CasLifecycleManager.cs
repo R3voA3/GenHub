@@ -19,11 +19,11 @@ namespace GenHub.Features.Storage.Services;
 /// Wraps CasReferenceTracker and CasService to ensure GC only runs after untracking.
 /// </summary>
 public class CasLifecycleManager(
-    CasReferenceTracker referenceTracker,
+    ICasReferenceTracker referenceTracker,
     ICasService casService,
     ICasStorage casStorage,
     IOptions<CasConfiguration> config,
-    ILogger<CasLifecycleManager> logger) : ICasLifecycleManager
+    ILogger<CasLifecycleManager> logger) : ICasLifecycleManager, IDisposable
 {
     private readonly SemaphoreSlim _gcLock = new(1, 1);
 
@@ -41,15 +41,32 @@ public class CasLifecycleManager(
                 newManifest.Id.Value);
 
             // Step 1: Track new manifest first (ensures new content is protected)
-            await referenceTracker.TrackManifestReferencesAsync(
+            var trackResult = await referenceTracker.TrackManifestReferencesAsync(
                 newManifest.Id.Value,
                 newManifest,
                 cancellationToken);
 
+            if (!trackResult.Success)
+            {
+                logger.LogError(
+                    "Failed to track new manifest references: {NewId} -> {Error}",
+                    newManifest.Id.Value,
+                    trackResult.FirstError);
+                return trackResult;
+            }
+
             // Step 2: Untrack old manifest (makes old content eligible for GC)
             if (!string.Equals(oldManifestId, newManifest.Id.Value, StringComparison.OrdinalIgnoreCase))
             {
-                await referenceTracker.UntrackManifestAsync(oldManifestId, cancellationToken);
+                var untrackResult = await referenceTracker.UntrackManifestAsync(oldManifestId, cancellationToken);
+                if (!untrackResult.Success)
+                {
+                    logger.LogWarning(
+                        "Failed to untrack old manifest references: {OldId} -> {Error}",
+                        oldManifestId,
+                        untrackResult.FirstError);
+                    return untrackResult;
+                }
             }
 
             logger.LogInformation(
@@ -58,6 +75,11 @@ public class CasLifecycleManager(
                 newManifest.Id.Value);
 
             return OperationResult.CreateSuccess();
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Operation cancelled during manifest reference replacement");
+            throw;
         }
         catch (Exception ex)
         {
@@ -70,42 +92,78 @@ public class CasLifecycleManager(
         }
     }
 
-    /// <inheritdoc/>
-    public async Task<OperationResult<int>> UntrackManifestsAsync(
+    /// <summary>
+    /// Untracks multiple manifests in bulk.
+    /// Note: Returns Success=true even if individual manifests fail to untrack (partial success).
+    /// Callers MUST check <see cref="BulkUntrackResult.Errors"/> to detect individual failures.
+    /// Failure (Success=false) is reserved for cases where the entire operation could not be executed.
+    /// </summary>
+    /// <param name="manifestIds">The IDs of the manifests to untrack.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A result containing the bulk untrack stats and any individual errors.</returns>
+    public async Task<OperationResult<BulkUntrackResult>> UntrackManifestsAsync(
         IEnumerable<string> manifestIds,
         CancellationToken cancellationToken = default)
     {
         var ids = manifestIds.ToList();
         int untracked = 0;
+        var errors = new List<string>();
 
         foreach (var manifestId in ids)
         {
             try
             {
-                await referenceTracker.UntrackManifestAsync(manifestId, cancellationToken);
-                untracked++;
-                logger.LogDebug("Untracked manifest: {ManifestId}", manifestId);
+                var result = await referenceTracker.UntrackManifestAsync(manifestId, cancellationToken);
+                if (result.Success)
+                {
+                    untracked++;
+                    logger.LogDebug("Untracked manifest: {ManifestId}", manifestId);
+                }
+                else
+                {
+                    var msg = $"Failed to untrack {manifestId}: {result.FirstError}";
+                    errors.Add(msg);
+                    logger.LogWarning("{Message}", msg);
+                }
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to untrack manifest: {ManifestId}", manifestId);
+                var msg = $"Error untracking {manifestId}: {ex.Message}";
+                errors.Add(msg);
+                logger.LogWarning(ex, "{Message}", msg);
             }
         }
 
+        var resultData = new BulkUntrackResult(untracked, ids.Count, errors);
+
+        if (errors.Count > 0)
+        {
+            logger.LogError("Untracked {Count}/{Total} manifests with {ErrorCount} errors", untracked, ids.Count, errors.Count);
+
+            // Return FAILURE because we have individual errors, ensuring callers
+            // don't proceed with inconsistent state (partial success).
+            return OperationResult<BulkUntrackResult>.CreateFailure(
+                $"Untracking failed for {errors.Count} manifests. See logs for details.", resultData, TimeSpan.Zero);
+        }
+
         logger.LogInformation("Untracked {Count}/{Total} manifests", untracked, ids.Count);
-        return OperationResult<int>.CreateSuccess(untracked);
+        return OperationResult<BulkUntrackResult>.CreateSuccess(resultData);
     }
 
     /// <inheritdoc/>
     public async Task<OperationResult<GarbageCollectionStats>> RunGarbageCollectionAsync(
         bool force = false,
+        TimeSpan? lockTimeout = null,
         CancellationToken cancellationToken = default)
     {
         // Ensure only one GC runs at a time
-        if (!await _gcLock.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken))
+        var timeout = lockTimeout ?? config.Value.GcLockTimeout;
+        if (!await _gcLock.WaitAsync(timeout, cancellationToken))
         {
             logger.LogWarning("GC already in progress, skipping");
-            return OperationResult<GarbageCollectionStats>.CreateFailure("GC already in progress");
+
+            // Return InProgressResult which has InProgress=true and Skipped=true
+            return OperationResult<GarbageCollectionStats>.CreateSuccess(GarbageCollectionStats.InProgressResult);
         }
 
         try
@@ -124,6 +182,7 @@ public class CasLifecycleManager(
                 ObjectsDeleted = gcResult.ObjectsDeleted,
                 BytesFreed = gcResult.BytesFreed,
                 Duration = stopwatch.Elapsed,
+                Skipped = false,
             };
 
             logger.LogInformation(
@@ -134,6 +193,11 @@ public class CasLifecycleManager(
                 stats.BytesFreed);
 
             return OperationResult<GarbageCollectionStats>.CreateSuccess(stats);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Garbage collection cancelled");
+            throw;
         }
         catch (Exception ex)
         {
@@ -162,7 +226,13 @@ public class CasLifecycleManager(
             var orphanedCount = allObjects.Except(referencedHashes).Count();
 
             // Count manifests and workspaces from refs directory
-            var refsDir = Path.Combine(config.Value.CasRootPath, "refs");
+            var casRoot = config.Value.CasRootPath;
+            if (string.IsNullOrEmpty(casRoot))
+            {
+                return OperationResult<CasReferenceAudit>.CreateFailure("CasRootPath is not configured");
+            }
+
+            var refsDir = Path.Combine(casRoot, "refs");
             var manifestsDir = Path.Combine(refsDir, "manifests");
             var workspacesDir = Path.Combine(refsDir, "workspaces");
 
@@ -191,10 +261,22 @@ public class CasLifecycleManager(
 
             return OperationResult<CasReferenceAudit>.CreateSuccess(audit);
         }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("Operation cancelled during reference audit");
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get reference audit");
             return OperationResult<CasReferenceAudit>.CreateFailure($"Audit failed: {ex.Message}");
         }
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        _gcLock.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

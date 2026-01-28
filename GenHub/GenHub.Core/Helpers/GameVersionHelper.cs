@@ -43,10 +43,9 @@ public static partial class GameVersionHelper
         {
             if (longResult > int.MaxValue)
             {
-                 // If it's still too large for int, we take the last 9 digits as a compromise
-                 // or just return the long if we can change return type?
-                 // Most callers expect int.
-                 return (int)(longResult % 1000000000);
+                // If it's still too large for int, cap at int.MaxValue to prevent incorrect comparisons
+                // Most callers expect int.
+                return int.MaxValue;
             }
 
             return (int)longResult;
@@ -156,9 +155,8 @@ public static partial class GameVersionHelper
             return (dateValue * 10) + parsed.Value.Qfe;
         }
 
-        // Fallback: extract all digits
-        var digitsOnly = string.Concat(version.Where(char.IsDigit));
-        return int.TryParse(digitsOnly, out var result) ? result : 0;
+        // Fallback: use ExtractVersionFromVersionString which handles overflow
+        return ExtractVersionFromVersionString(version);
     }
 
     /// <summary>

@@ -45,13 +45,8 @@ public static class VersionComparer
             return CompareNumericVersions(version1, version2);
         }
 
-        // Default: try numeric comparison, fall back to string comparison
-        var numericResult = TryCompareNumericVersions(version1, version2);
-        if (numericResult.HasValue)
-            return numericResult.Value;
-
-        // Fall back to ordinal string comparison
-        return string.Compare(version1, version2, StringComparison.Ordinal);
+        // Default: Use the robust numeric/semantic comparison logic
+        return CompareNumericVersions(version1, version2);
     }
 
     /// <summary>
@@ -89,9 +84,13 @@ public static class VersionComparer
     /// <returns>Comparison result.</returns>
     private static int CompareNumericVersions(string ver1, string ver2)
     {
+        // Trim leading 'v' or 'V' for numeric analysis
+        var v1Clean = ver1.TrimStart('v', 'V');
+        var v2Clean = ver2.TrimStart('v', 'V');
+
         // Try to parse as long integers for direct comparison (e.g. "20250101")
-        bool isNum1 = long.TryParse(ver1, out var n1);
-        bool isNum2 = long.TryParse(ver2, out var n2);
+        bool isNum1 = long.TryParse(v1Clean, out var n1);
+        bool isNum2 = long.TryParse(v2Clean, out var n2);
 
         if (isNum1 && isNum2)
         {
@@ -100,20 +99,41 @@ public static class VersionComparer
 
         // Handle mixed Semantic vs Numeric-Date case
         // If one is semantic (has dots) and the other is a "large" number (likely a date),
-        // we assume the Semantic version is newer (treating date-versions as legacy/v0).
+        // check if the semantic version's major version is >= 1 before treating it as newer.
         bool hasDot1 = ver1.Contains('.');
         bool hasDot2 = ver2.Contains('.');
 
         if (hasDot1 && isNum2)
         {
              // ver1 is Semantic, ver2 is Numeric
-             // If ver2 looks like a date (> 100000), treat ver1 as newer if it starts with >= 1
-             if (n2 > 100000) return 1;
+             // Parse the semantic major version (integer before first '.')
+             // Only treat semantic as newer if major >= 1; otherwise fall through to numeric comparison
+             if (n2 > 100000)
+             {
+                 // Try to parse the major version from the semantic string
+                 var majorPart = ver1.Split('.')[0].TrimStart('v', 'V');
+                 if (int.TryParse(majorPart, out var semanticMajor) && semanticMajor >= 1)
+                 {
+                     return 1;
+                 }
+
+                 // If major version is 0 or parsing fails, fall through to numeric comparison
+             }
         }
         else if (isNum1 && hasDot2)
         {
              // ver1 is Numeric, ver2 is Semantic
-             if (n1 > 100000) return -1;
+             if (n1 > 100000)
+             {
+                 // Try to parse the major version from the semantic string
+                 var majorPart = ver2.Split('.')[0].TrimStart('v', 'V');
+                 if (int.TryParse(majorPart, out var semanticMajor) && semanticMajor >= 1)
+                 {
+                     return -1;
+                 }
+
+                 // If major version is 0 or parsing fails, fall through to numeric comparison
+             }
         }
 
         // Handle standard semantic versions (e.g. "1.10" vs "2.0")
@@ -126,7 +146,14 @@ public static class VersionComparer
         var digits1 = ExtractDigits(ver1);
         var digits2 = ExtractDigits(ver2);
 
-        if (long.TryParse(digits1, out var ld1) && long.TryParse(digits2, out var ld2))
+        // Avoid collapsing non-dot alphanumeric versions to digits only.
+        // If the original version contained digits but ALSO other characters (like letters),
+        // then the numeric comparison is risky if the other one is pure numeric.
+        // Check if the original strings (ignoring 'v') contain non-digits.
+        bool hasNonDigits1 = v1Clean.Any(c => !char.IsDigit(c));
+        bool hasNonDigits2 = v2Clean.Any(c => !char.IsDigit(c));
+
+        if (!hasNonDigits1 && !hasNonDigits2 && long.TryParse(digits1, out var ld1) && long.TryParse(digits2, out var ld2))
         {
             return NormalizeNumericDate(ld1).CompareTo(NormalizeNumericDate(ld2));
         }
@@ -160,35 +187,30 @@ public static class VersionComparer
 
         for (int i = 0; i < Math.Max(parts1.Length, parts2.Length); i++)
         {
-            var segment1 = i < parts1.Length ? ExtractDigits(parts1[i]) : "0";
-            var segment2 = i < parts2.Length ? ExtractDigits(parts2[i]) : "0";
+            var rawSegment1 = i < parts1.Length ? parts1[i] : "0";
+            var rawSegment2 = i < parts2.Length ? parts2[i] : "0";
 
-            if (long.TryParse(segment1, out var num1) && long.TryParse(segment2, out var num2))
+            // Trim leading 'v' if present
+            var segment1 = rawSegment1.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? rawSegment1[1..] : rawSegment1;
+            var segment2 = rawSegment2.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? rawSegment2[1..] : rawSegment2;
+
+            // Check if both segments are pure digits after trimming 'v'
+            var isDigit1 = segment1.All(char.IsDigit);
+            var isDigit2 = segment2.All(char.IsDigit);
+
+            if (isDigit1 && isDigit2 && long.TryParse(segment1, out var num1) && long.TryParse(segment2, out var num2))
             {
                 if (num1 != num2) return num1.CompareTo(num2);
             }
             else
             {
-                var strCompare = string.Compare(segment1, segment2, StringComparison.OrdinalIgnoreCase);
+                // For non-pure-numeric segments, compare the full original strings (case-insensitive)
+                var strCompare = string.Compare(rawSegment1, rawSegment2, StringComparison.OrdinalIgnoreCase);
                 if (strCompare != 0) return strCompare;
             }
         }
 
         return 0;
-    }
-
-    /// <summary>
-    /// Tries to compare two versions as numeric values.
-    /// </summary>
-    /// <returns>Comparison result if successful, null otherwise.</returns>
-    private static int? TryCompareNumericVersions(string ver1, string ver2)
-    {
-        if (long.TryParse(ver1, out var num1) && long.TryParse(ver2, out var num2))
-        {
-            return num1.CompareTo(num2);
-        }
-
-        return null;
     }
 
     /// <summary>

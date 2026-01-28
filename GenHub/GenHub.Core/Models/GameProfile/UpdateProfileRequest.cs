@@ -25,13 +25,15 @@ public class UpdateProfileRequest
 
     /// <summary>
     /// Gets or sets the game client.
+    /// Null preserves the existing value.
     /// </summary>
     public GameClient? GameClient { get; set; }
 
     /// <summary>
-    /// Gets or sets the preferred workspace strategy.
+    /// Gets or sets the workspace strategy for this profile.
+    /// Null preserves the existing value.
     /// </summary>
-    public WorkspaceStrategy? PreferredStrategy { get; set; }
+    public WorkspaceStrategy? WorkspaceStrategy { get; set; }
 
     /// <summary>
     /// Gets or sets the launch arguments.

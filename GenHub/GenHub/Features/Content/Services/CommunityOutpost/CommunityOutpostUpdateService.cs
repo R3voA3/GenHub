@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Constants;
 using GenHub.Core.Helpers;
+using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Interfaces.Manifest;
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Results.Content;
@@ -23,7 +24,7 @@ public class CommunityOutpostUpdateService(
     CommunityOutpostResolver resolver,
     IContentManifestPool manifestPool,
     ILogger<CommunityOutpostUpdateService> logger)
-    : ContentUpdateServiceBase(logger)
+    : ContentUpdateServiceBase(logger), ICommunityOutpostUpdateService
 {
     /// <inheritdoc/>
     protected override string ServiceName => CommunityOutpostConstants.PublisherName;
@@ -60,7 +61,7 @@ public class CommunityOutpostUpdateService(
 
             // Check if any installed manifest has a newer version in the catalog
             ContentSearchResult? latestToResolve = null;
-            string? currentVersion = null;
+            string? currentVersionAtLatest = null;
 
             foreach (var discovered in discoveryResult.Data.Items)
             {
@@ -69,15 +70,14 @@ public class CommunityOutpostUpdateService(
 
                 if (installed != null)
                 {
-                    if (VersionComparer.CompareVersions(discovered.Version, installed.ManifestVersion, CommunityOutpostConstants.PublisherType) > 0)
+                    if (VersionComparer.CompareVersions(discovered.Version, installed.Version, CommunityOutpostConstants.PublisherType) > 0)
                     {
-                        logger.LogInformation("Update found for {Id}: {OldVersion} -> {NewVersion}", discovered.Id, installed.ManifestVersion, discovered.Version);
-
-                        // Return the first update found
-                        if (latestToResolve == null)
+                        // Check if this discovered version is newer than our current "latest to resolve"
+                        if (latestToResolve == null || VersionComparer.CompareVersions(discovered.Version, latestToResolve.Version, CommunityOutpostConstants.PublisherType) > 0)
                         {
+                            logger.LogInformation("Newer update candidate found for {Id}: {OldVersion} -> {NewVersion}", discovered.Id, installed.Version, discovered.Version);
                             latestToResolve = discovered;
-                            currentVersion = installed.ManifestVersion;
+                            currentVersionAtLatest = installed.Version;
                         }
                     }
                 }
@@ -86,7 +86,7 @@ public class CommunityOutpostUpdateService(
             if (latestToResolve == null)
             {
                 logger.LogInformation("All installed Community Outpost content is up to date");
-                return ContentUpdateCheckResult.CreateNoUpdateAvailable(installedManifests.FirstOrDefault()?.ManifestVersion);
+                return ContentUpdateCheckResult.CreateNoUpdateAvailable(installedManifests.FirstOrDefault()?.Version);
             }
 
             var latestVersion = latestToResolve.Version;
@@ -98,12 +98,12 @@ public class CommunityOutpostUpdateService(
             if (!resolveResult.Success || resolveResult.Data == null)
             {
                 logger.LogError("Failed to resolve Community Outpost content: {Error}", resolveResult.FirstError);
-                return ContentUpdateCheckResult.CreateFailure($"Failed to resolve: {resolveResult.FirstError}", currentVersion);
+                return ContentUpdateCheckResult.CreateFailure($"Failed to resolve: {resolveResult.FirstError}", currentVersionAtLatest);
             }
 
             return ContentUpdateCheckResult.CreateUpdateAvailable(
                 latestVersion,
-                currentVersion);
+                currentVersionAtLatest);
         }
         catch (Exception ex)
         {

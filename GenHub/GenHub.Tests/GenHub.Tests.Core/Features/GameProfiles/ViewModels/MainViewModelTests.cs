@@ -276,6 +276,7 @@ public class MainViewModelTests
 
         // Minimal defaults used by MainViewModel
         mock.Setup(x => x.GetLastSelectedTab()).Returns(NavigationTab.GameProfiles);
+        mock.Setup(x => x.GetManifestsPath()).Returns(Path.Combine(Path.GetTempPath(), "GenHub", "Manifests"));
         return mock.Object;
     }
 
@@ -301,7 +302,8 @@ public class MainViewModelTests
             mockServiceProvider.Object,
             mockLogger.Object,
             mockNotificationService.Object,
-            realGitHubDiscoverer);
+            realGitHubDiscoverer,
+            CreateConfigProviderMock());
     }
 
     /// <summary>
@@ -322,7 +324,6 @@ public class MainViewModelTests
             null, // IContentManifestPool
             null, // IContentStorageService
             null, // ILocalContentService
-            null, // ILocalContentProfileReconciler
             NullLogger<GameProfileSettingsViewModel>.Instance,
             NullLogger<GameSettingsViewModel>.Instance);
 

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
+using GenHub.Core.Models.Storage;
 
 namespace GenHub.Core.Interfaces.Storage;
 
@@ -30,8 +31,8 @@ public interface ICasLifecycleManager
     /// </summary>
     /// <param name="manifestIds">The manifest IDs to untrack.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Operation result with count of manifests untracked.</returns>
-    Task<OperationResult<int>> UntrackManifestsAsync(
+    /// <returns>Operation result with bulk untrack stats.</returns>
+    Task<OperationResult<BulkUntrackResult>> UntrackManifestsAsync(
         IEnumerable<string> manifestIds,
         CancellationToken cancellationToken = default);
 
@@ -40,10 +41,12 @@ public interface ICasLifecycleManager
     /// Should only be called AFTER all untrack operations are complete.
     /// </summary>
     /// <param name="force">Whether to force collection regardless of grace period.</param>
+    /// <param name="lockTimeout">Optional timeout to wait for the GC lock. Defaults to 5 seconds if not specified.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Result with GC statistics.</returns>
     Task<OperationResult<GarbageCollectionStats>> RunGarbageCollectionAsync(
         bool force = false,
+        TimeSpan? lockTimeout = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

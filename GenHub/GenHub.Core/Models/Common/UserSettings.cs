@@ -1,3 +1,5 @@
+#pragma warning disable CS0618 // Type or member is obsolete
+
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.Storage;
@@ -118,42 +120,9 @@ public class UserSettings : ICloneable
     public string? DismissedUpdateVersion { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether to automatically update GeneralsOnline without asking.
-    /// Null means ask the user. True means always update. False means never update (or ignore for now).
-    /// </summary>
-    public bool? AutoUpdateGeneralsOnline { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to automatically update Community Patch without asking.
-    /// Null means ask the user. True means always update. False means never update.
-    /// </summary>
-    public bool? AutoUpdateCommunityPatch { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to delete old GeneralsOnline versions when updating.
-    /// </summary>
-    public bool DeleteOldGeneralsOnlineVersions { get; set; } = true;
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to delete old Community Patch versions when updating.
-    /// </summary>
-    public bool DeleteOldCommunityPatchVersions { get; set; } = true;
-
-    /// <summary>
     /// Gets or sets a value indicating whether the user has seen the quickstart guide.
     /// </summary>
     public bool HasSeenQuickStart { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to automatically update SuperHackers without asking.
-    /// Null means ask the user. True means always update. False means never update.
-    /// </summary>
-    public bool? AutoUpdateSuperHackers { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to delete old SuperHackers versions when updating.
-    /// </summary>
-    public bool DeleteOldSuperHackersVersions { get; set; } = true;
 
     /// <summary>
     /// Gets or sets the preferred update strategy (ReplaceCurrent vs CreateNewProfile).
@@ -187,12 +156,6 @@ public class UserSettings : ICloneable
             CachePath = CachePath,
             ApplicationDataPath = ApplicationDataPath,
             HasSeenQuickStart = HasSeenQuickStart,
-            AutoUpdateGeneralsOnline = AutoUpdateGeneralsOnline,
-            AutoUpdateCommunityPatch = AutoUpdateCommunityPatch,
-            DeleteOldGeneralsOnlineVersions = DeleteOldGeneralsOnlineVersions,
-            DeleteOldCommunityPatchVersions = DeleteOldCommunityPatchVersions,
-            AutoUpdateSuperHackers = AutoUpdateSuperHackers,
-            DeleteOldSuperHackersVersions = DeleteOldSuperHackersVersions,
 
             SubscribedPrNumber = SubscribedPrNumber,
             SubscribedBranch = SubscribedBranch,
@@ -207,22 +170,9 @@ public class UserSettings : ICloneable
             SkippedUpdateVersions = SkippedUpdateVersions != null ? new Dictionary<string, string>(SkippedUpdateVersions) : [],
             PreferredUpdateStrategy = PreferredUpdateStrategy,
             PublisherSubscriptions = PublisherSubscriptions != null
-                ? [.. PublisherSubscriptions.Select(s => new PublisherSubscription
-                {
-                    PublisherId = s.PublisherId,
-                    PublisherName = s.PublisherName,
-                    IsSubscribed = s.IsSubscribed,
-                    SubscribedDate = s.SubscribedDate,
-                    LastUpdated = s.LastUpdated,
-                    SkippedVersion = s.SkippedVersion,
-                    SkippedVersionDate = s.SkippedVersionDate,
-                    AutoUpdateEnabled = s.AutoUpdateEnabled,
-                    PreferredUpdateStrategy = s.PreferredUpdateStrategy,
-                    DeleteOldVersions = s.DeleteOldVersions,
-                    LastInstalledVersion = s.LastInstalledVersion,
-                    LastInstalledDate = s.LastInstalledDate,
-                })]
+                ? [.. PublisherSubscriptions.Select(s => s.Clone())]
                 : [],
+            SkippedVersions = SkippedVersions != null ? [.. SkippedVersions] : [],
         };
     }
 
@@ -231,7 +181,30 @@ public class UserSettings : ICloneable
     /// Key: Provider/Publisher ID. Value: Valid skipped version string.
     /// @deprecated Use PublisherSubscriptions instead. This is maintained for backward compatibility.
     /// </summary>
+    [Obsolete("Use PublisherSubscriptions instead. This is maintained for backward compatibility.")]
     public Dictionary<string, string> SkippedUpdateVersions { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the list of skipped versions for backward compatibility.
+    /// </summary>
+    [Obsolete("Use PublisherSubscriptions instead.")]
+    public List<string> SkippedVersions { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the primary skipped version for backward compatibility.
+    /// </summary>
+    [Obsolete("Use PublisherSubscriptions instead.")]
+    public string? SkippedVersion
+    {
+        get => SkippedVersions.FirstOrDefault();
+        set
+        {
+            if (!string.IsNullOrEmpty(value) && !SkippedVersions.Contains(value))
+            {
+                SkippedVersions.Add(value);
+            }
+        }
+    }
 
     /// <summary>
     /// Gets or sets the collection of publisher subscriptions.
@@ -249,7 +222,7 @@ public class UserSettings : ICloneable
     public PublisherSubscription GetOrCreateSubscription(string publisherId, string? publisherName = null)
     {
         var subscription = PublisherSubscriptions.FirstOrDefault(s =>
-            s.PublisherId.Equals(publisherId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(s.PublisherId, publisherId, StringComparison.OrdinalIgnoreCase));
 
         if (subscription == null)
         {
@@ -277,7 +250,7 @@ public class UserSettings : ICloneable
     public PublisherSubscription? GetSubscription(string publisherId)
     {
         return PublisherSubscriptions.FirstOrDefault(s =>
-            s.PublisherId.Equals(publisherId, StringComparison.OrdinalIgnoreCase));
+            string.Equals(s.PublisherId, publisherId, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -287,7 +260,7 @@ public class UserSettings : ICloneable
     /// <returns>True if subscribed; otherwise, false.</returns>
     public bool IsSubscribedTo(string publisherId)
     {
-        return GetSubscription(publisherId)?.IsActive ?? true; // Default to subscribed for backward compatibility
+        return GetSubscription(publisherId)?.IsActive ?? false; // Default to not subscribed for safety
     }
 
     /// <summary>
@@ -314,11 +287,11 @@ public class UserSettings : ICloneable
     /// <returns>True if the version should be skipped; otherwise, false.</returns>
     public bool IsVersionSkipped(string publisherId, string version)
     {
-        // Check new subscription system first
+        // Check new subscription system
         var subscription = GetSubscription(publisherId);
-        if (subscription != null)
+        if (subscription != null && subscription.ShouldSkipVersion(version))
         {
-            return subscription.ShouldSkipVersion(version);
+            return true;
         }
 
         // Fallback to legacy SkippedUpdateVersions dictionary

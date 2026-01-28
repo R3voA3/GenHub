@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using GenHub.Core.Models.Enums;
 
 namespace GenHub.Core.Models.Content;
 
@@ -58,7 +58,7 @@ public class PublisherSubscription
     /// Gets or sets the user's preferred update strategy for this publisher.
     /// This allows per-publisher customization of how updates are applied.
     /// </summary>
-    public Models.Enums.UpdateStrategy? PreferredUpdateStrategy { get; set; }
+    public UpdateStrategy? PreferredUpdateStrategy { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether to delete old versions when updating.
@@ -79,7 +79,6 @@ public class PublisherSubscription
 
     /// <summary>
     /// Gets a value indicating whether this subscription is currently active.
-    /// (subscribed and not permanently muted).
     /// </summary>
     public bool IsActive => IsSubscribed;
 
@@ -117,6 +116,8 @@ public class PublisherSubscription
     /// <param name="version">The version that was installed.</param>
     public void RecordInstallation(string version)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(version);
+
         LastInstalledVersion = version;
         LastInstalledDate = DateTime.UtcNow;
         LastUpdated = DateTime.UtcNow;
@@ -156,14 +157,42 @@ public class PublisherSubscription
                 {
                     return false; // Newer version, should not be skipped.
                 }
+
+                // If comparison is 0 (equal) or < 0 (older), skip it.
+                return true;
             }
-            catch
+            catch (Exception ex)
             {
-                // If comparison fails, fall through to string comparison.
+                // If comparison fails, fall through to default behavior.
+                System.Diagnostics.Debug.WriteLine($"Version comparison failed: {ex.Message}");
             }
         }
 
         // Default behavior: only skip the exact version that was skipped.
-        return string.Equals(version, SkippedVersion, StringComparison.OrdinalIgnoreCase);
+        // Since we already checked for exact match above, if we get here the versions are different.
+        return false;
+    }
+
+    /// <summary>
+    /// Creates a deep copy of this PublisherSubscription instance.
+    /// </summary>
+    /// <returns>A new PublisherSubscription with all properties copied.</returns>
+    public PublisherSubscription Clone()
+    {
+        return new PublisherSubscription
+        {
+            PublisherId = PublisherId,
+            PublisherName = PublisherName,
+            IsSubscribed = IsSubscribed,
+            SubscribedDate = SubscribedDate,
+            LastUpdated = LastUpdated,
+            SkippedVersion = SkippedVersion,
+            SkippedVersionDate = SkippedVersionDate,
+            AutoUpdateEnabled = AutoUpdateEnabled,
+            PreferredUpdateStrategy = PreferredUpdateStrategy,
+            DeleteOldVersions = DeleteOldVersions,
+            LastInstalledVersion = LastInstalledVersion,
+            LastInstalledDate = LastInstalledDate,
+        };
     }
 }

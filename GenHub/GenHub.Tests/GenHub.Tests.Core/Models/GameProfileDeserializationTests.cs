@@ -9,15 +9,16 @@ namespace GenHub.Tests.Core.Models;
 /// <summary>
 /// Tests to verify that GameProfile correctly applies default values during deserialization.
 /// This addresses the bug where WorkspaceStrategy was defaulting to SymlinkOnly (enum default 0)
-/// instead of the configured default (HardLink) when loading from JSON.
+/// WorkspaceStrategyJsonConverter correctly handles the null/missing property, allowing
+/// services to apply the global default fallback.
 /// </summary>
 public class GameProfileDeserializationTests
 {
     /// <summary>
-    /// Verifies that deserialization defaults to HardLink when WorkspaceStrategy is missing.
+    /// Verifies that deserialization defaults to null when WorkspaceStrategy is missing.
     /// </summary>
     [Fact]
-    public void Deserialize_ProfileWithoutWorkspaceStrategy_ShouldDefaultToHardLink()
+    public void Deserialize_ProfileWithoutWorkspaceStrategy_ShouldHaveNullStrategy()
     {
         // Arrange - JSON without WorkspaceStrategy property
         var json = """
@@ -33,17 +34,16 @@ public class GameProfileDeserializationTests
 
         // Assert
         Assert.NotNull(profile);
-        Assert.Equal(WorkspaceStrategy.HardLink, profile.WorkspaceStrategy);
-        Assert.Equal(WorkspaceConstants.DefaultWorkspaceStrategy, profile.WorkspaceStrategy);
+        Assert.Null(profile.WorkspaceStrategy);
     }
 
     /// <summary>
-    /// Verifies that SymlinkOnly is overridden to HardLink during deserialization.
+    /// Verifies that SymlinkOnly is PRESERVED when explicit in JSON.
     /// </summary>
     [Fact]
-    public void Deserialize_ProfileWithSymlinkOnly_ShouldOverrideToHardLink()
+    public void Deserialize_ProfileWithSymlinkOnly_ShouldPreserveSymlinkOnly()
     {
-        // Arrange - JSON with explicit SymlinkOnly (which is the problematic default)
+        // Arrange - JSON with explicit SymlinkOnly (0)
         var json = """
         {
             "Id": "test_profile",
@@ -58,8 +58,8 @@ public class GameProfileDeserializationTests
         // Assert
         Assert.NotNull(profile);
 
-        // The OnDeserialized hook should override SymlinkOnly to HardLink
-        Assert.Equal(WorkspaceStrategy.HardLink, profile.WorkspaceStrategy);
+        // Should NOT be overridden to HardLink anymore
+        Assert.Equal(WorkspaceStrategy.SymlinkOnly, profile.WorkspaceStrategy);
     }
 
     /// <summary>
@@ -73,7 +73,7 @@ public class GameProfileDeserializationTests
         {
             "Id": "test_profile",
             "Name": "Test Profile",
-            "WorkspaceStrategy": 2
+            "WorkspaceStrategy": 3
         }
         """;
 
@@ -109,10 +109,10 @@ public class GameProfileDeserializationTests
     }
 
     /// <summary>
-    /// Verifies that WorkspaceStrategy is preserved after a serialization round-trip.
+    /// Verifies that WorkspaceStrategy is preserved after a serialization round-trip for HardLink.
     /// </summary>
     [Fact]
-    public void Serialize_ThenDeserialize_ShouldPreserveWorkspaceStrategy()
+    public void Serialize_ThenDeserialize_HardLink_ShouldPreserveWorkspaceStrategy()
     {
         // Arrange
         var originalProfile = new GameProfileModel
@@ -129,14 +129,59 @@ public class GameProfileDeserializationTests
         // Assert
         Assert.NotNull(deserializedProfile);
         Assert.Equal(WorkspaceStrategy.HardLink, deserializedProfile.WorkspaceStrategy);
-        Assert.Equal(originalProfile.WorkspaceStrategy, deserializedProfile.WorkspaceStrategy);
     }
 
     /// <summary>
-    /// Verifies that a new profile instance defaults to HardLink.
+    /// Verifies that WorkspaceStrategy is preserved after a serialization round-trip for FullCopy.
     /// </summary>
     [Fact]
-    public void NewProfile_ShouldDefaultToHardLink()
+    public void Serialize_ThenDeserialize_FullCopy_ShouldPreserveWorkspaceStrategy()
+    {
+        // Arrange
+        var originalProfile = new GameProfileModel
+        {
+            Id = "test_profile_copy",
+            Name = "Test Profile Copy",
+            WorkspaceStrategy = WorkspaceStrategy.FullCopy,
+        };
+
+        // Act - Round trip through JSON
+        var json = JsonSerializer.Serialize(originalProfile);
+        var deserializedProfile = JsonSerializer.Deserialize<GameProfileModel>(json);
+
+        // Assert
+        Assert.NotNull(deserializedProfile);
+        Assert.Equal(WorkspaceStrategy.FullCopy, deserializedProfile.WorkspaceStrategy);
+    }
+
+    /// <summary>
+    /// Verifies that WorkspaceStrategy is preserved after a serialization round-trip for SymlinkOnly.
+    /// </summary>
+    [Fact]
+    public void Serialize_ThenDeserialize_SymlinkOnly_ShouldPreserveWorkspaceStrategy()
+    {
+        // Arrange
+        var originalProfile = new GameProfileModel
+        {
+            Id = "test_profile_symlink",
+            Name = "Test Profile Symlink",
+            WorkspaceStrategy = WorkspaceStrategy.SymlinkOnly,
+        };
+
+        // Act - Round trip through JSON
+        var json = JsonSerializer.Serialize(originalProfile);
+        var deserializedProfile = JsonSerializer.Deserialize<GameProfileModel>(json);
+
+        // Assert
+        Assert.NotNull(deserializedProfile);
+        Assert.Equal(WorkspaceStrategy.SymlinkOnly, deserializedProfile.WorkspaceStrategy);
+    }
+
+    /// <summary>
+    /// Verifies that a new profile instance has null WorkspaceStrategy (relying on default).
+    /// </summary>
+    [Fact]
+    public void NewProfile_ShouldHaveNullWorkspaceStrategy()
     {
         // Arrange & Act
         var profile = new GameProfileModel
@@ -146,7 +191,40 @@ public class GameProfileDeserializationTests
         };
 
         // Assert
+        Assert.Null(profile.WorkspaceStrategy);
+    }
+
+    /// <summary>
+    /// Verifies that string-based enum values are parsed correctly during deserialization.
+    /// This ensures backward compatibility or manual editing support where strings like "HardLink" are used.
+    /// </summary>
+    [Fact]
+    public void Deserialize_ProfileWithStringEnum_ShouldParseCorrectly()
+    {
+        // Arrange - JSON with string enum value
+        var json = """
+        {
+            "Id": "test_profile",
+            "Name": "Test Profile",
+            "WorkspaceStrategy": "HardLink"
+        }
+        """;
+
+        // Act
+        // Note: Default System.Text.Json requires JsonStringEnumConverter to handle strings.
+        // We assume the global serializer options or attribute on the property handles this.
+        // If it fails, it means we need to ensure the converter is registered.
+        // However, for this test, we are testing if the MODEL supports it via the configured serializer.
+        // If the project uses a custom converter factory or attribute, this should work.
+        var options = new JsonSerializerOptions
+        {
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+            PropertyNameCaseInsensitive = true,
+        };
+        var profile = JsonSerializer.Deserialize<GameProfileModel>(json, options);
+
+        // Assert
+        Assert.NotNull(profile);
         Assert.Equal(WorkspaceStrategy.HardLink, profile.WorkspaceStrategy);
-        Assert.Equal(WorkspaceConstants.DefaultWorkspaceStrategy, profile.WorkspaceStrategy);
     }
 }
