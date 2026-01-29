@@ -12,6 +12,7 @@ using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.GameSettings;
 using GenHub.Core.Models.Results;
 using Microsoft.Extensions.Logging;
+using GameSettingsRecord = GenHub.Core.Models.GameSettings.GameSettings;
 
 namespace GenHub.Features.GameSettings;
 
@@ -24,6 +25,7 @@ public class GameSettingsService(ILogger<GameSettingsService> logger, IGamePathP
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
     };
 
     /// <summary>
@@ -199,48 +201,53 @@ public class GameSettingsService(ILogger<GameSettingsService> logger, IGamePathP
     }
 
     /// <inheritdoc/>
-    public async Task<OperationResult<GeneralsOnlineSettings>> LoadGeneralsOnlineSettingsAsync()
+    public async Task<OperationResult<GameSettingsRecord>> LoadGameSettingsAsync()
     {
-        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["Section"] = "GeneralsOnline" });
+        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["Section"] = "GameSettings" });
 
         try
         {
-            var settingsPath = GetGeneralsOnlineSettingsPath();
-            _logger.LogDebug("Loading GeneralsOnline settings from: {SettingsPath}", settingsPath);
+            var settingsPath = GetGameSettingsFilePath();
+            _logger.LogDebug("Loading Game settings from: {SettingsPath}", settingsPath);
 
             if (!File.Exists(settingsPath))
             {
-                _logger.LogWarning("GeneralsOnline settings file not found at {SettingsPath}, returning defaults", settingsPath);
-                return OperationResult<GeneralsOnlineSettings>.CreateSuccess(new GeneralsOnlineSettings());
+                _logger.LogWarning("GameSettings file not found at {SettingsPath}, returning defaults", settingsPath);
+                var defaultSettings = new GameSettingsRecord();
+
+                // Ensure defaults are saved if file is missing
+                await SaveGameSettingsAsync(defaultSettings);
+
+                return OperationResult<GameSettingsRecord>.CreateSuccess(defaultSettings);
             }
 
             var json = await File.ReadAllTextAsync(settingsPath);
-            var settings = JsonSerializer.Deserialize<GeneralsOnlineSettings>(json);
+            var settings = JsonSerializer.Deserialize<GameSettingsRecord>(json, _jsonSerializerOptions);
 
             if (settings == null)
             {
-                _logger.LogWarning("Failed to deserialize GeneralsOnline settings, returning defaults");
-                return OperationResult<GeneralsOnlineSettings>.CreateSuccess(new GeneralsOnlineSettings());
+                _logger.LogWarning("Failed to deserialize GameSettings, returning defaults");
+                return OperationResult<GameSettingsRecord>.CreateSuccess(new GameSettingsRecord());
             }
 
-            _logger.LogInformation("Loaded GeneralsOnline settings from {SettingsPath}", settingsPath);
-            return OperationResult<GeneralsOnlineSettings>.CreateSuccess(settings);
+            _logger.LogInformation("Loaded GameSettings from {SettingsPath}", settingsPath);
+            return OperationResult<GameSettingsRecord>.CreateSuccess(settings);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load GeneralsOnline settings");
-            return OperationResult<GeneralsOnlineSettings>.CreateFailure($"Failed to load GeneralsOnline settings: {ex.Message}");
+            _logger.LogError(ex, "Failed to load GameSettings");
+            return OperationResult<GameSettingsRecord>.CreateFailure($"Failed to load GameSettings: {ex.Message}");
         }
     }
 
     /// <inheritdoc/>
-    public async Task<OperationResult<bool>> SaveGeneralsOnlineSettingsAsync(GeneralsOnlineSettings settings)
+    public async Task<OperationResult<bool>> SaveGameSettingsAsync(GameSettingsRecord settings)
     {
-        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["Section"] = "GeneralsOnline" });
+        using var scope = _logger.BeginScope(new Dictionary<string, object> { ["Section"] = "GameSettings" });
 
         try
         {
-            var settingsPath = GetGeneralsOnlineSettingsPath();
+            var settingsPath = GetGameSettingsFilePath();
             var directory = Path.GetDirectoryName(settingsPath);
 
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -249,17 +256,33 @@ public class GameSettingsService(ILogger<GameSettingsService> logger, IGamePathP
                 Directory.CreateDirectory(directory);
             }
 
+            // Create a copy of the settings to possibly merge with existing file if needed,
+            // but for now we overwrite as the record is the source of truth.
+            // If we needed to preserve unknown JSON properties, we would need a more complex merge strategy.
+            // Assuming GameSettings record covers all known properties.
             var json = JsonSerializer.Serialize(settings, _jsonSerializerOptions);
             await File.WriteAllTextAsync(settingsPath, json, Encoding.UTF8);
 
-            _logger.LogInformation("Saved GeneralsOnline settings to {SettingsPath}", settingsPath);
+            _logger.LogInformation("Saved GameSettings to {SettingsPath}", settingsPath);
             return OperationResult<bool>.CreateSuccess(true);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save GeneralsOnline settings");
-            return OperationResult<bool>.CreateFailure($"Failed to save GeneralsOnline settings: {ex.Message}");
+            _logger.LogError(ex, "Failed to save GameSettings");
+            return OperationResult<bool>.CreateFailure($"Failed to save GameSettings: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Gets the path to the game settings file.
+    /// </summary>
+    /// <returns>The full path to the game settings JSON file.</returns>
+    public virtual string GetGameSettingsFilePath()
+    {
+        var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var zeroHourDataPath = Path.Combine(documentsPath, GameSettingsConstants.FolderNames.ZeroHour);
+        var generalsOnlineDataPath = Path.Combine(zeroHourDataPath, GameSettingsConstants.FolderNames.GeneralsOnlineData);
+        return Path.Combine(generalsOnlineDataPath, GameSettingsGeneralsOnlineConstants.SettingsFileName);
     }
 
     private static IniOptions ParseOptionsIni(string[] lines)
@@ -720,14 +743,6 @@ public class GameSettingsService(ILogger<GameSettingsService> logger, IGamePathP
             ["ShowMoneyPerMinute"] = BoolToString(settings.ShowMoneyPerMinute),
             ["SystemTimeFontSize"] = settings.SystemTimeFontSize.ToString(),
         };
-    }
-
-    private static string GetGeneralsOnlineSettingsPath()
-    {
-        var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        var zeroHourDataPath = Path.Combine(documentsPath, GameSettingsConstants.FolderNames.ZeroHour);
-        var generalsOnlineDataPath = Path.Combine(zeroHourDataPath, GameSettingsConstants.FolderNames.GeneralsOnlineData);
-        return Path.Combine(generalsOnlineDataPath, GameSettingsGeneralsOnlineConstants.SettingsFileName);
     }
 
     private static string SanitizeKey(string key)

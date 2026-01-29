@@ -12,6 +12,7 @@ using GenHub.Core.Interfaces.GameSettings;
 using GenHub.Core.Models.Enums;
 using GenHub.Core.Models.GameSettings;
 using Microsoft.Extensions.Logging;
+using GameSettingsRecord = GenHub.Core.Models.GameSettings.GameSettings;
 
 namespace GenHub.Features.GameProfiles.ViewModels;
 
@@ -214,7 +215,7 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
     private string? _selectedResolutionPreset;
 
     [ObservableProperty]
-    private ObservableCollection<string> _lodOptions = ["Low", "Medium", "High", "VeryHigh", "Custom"];
+    private ObservableCollection<string> _lodOptions = ["Low", "Medium", "High", "VeryHigh", "Custom",];
 
     /// <summary>
     /// Gets a value indicating whether the custom LOD option is selected.
@@ -222,7 +223,7 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
     public bool IsCustomLodSelected => StaticGameLOD == "Custom";
 
     [ObservableProperty]
-    private ObservableCollection<int> _aaOptions = [1, 2, 4];
+    private ObservableCollection<int> _aaOptions = [1, 2, 4,];
 
     // ===== TheSuperHackers Client Settings =====
     [ObservableProperty]
@@ -574,17 +575,17 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
                 _logger.LogWarning("Failed to load settings for {GameType}: {Errors}", gameType, string.Join(", ", errors));
             }
 
-            // Load GeneralsOnline settings separately
-            var goResult = await _gameSettingsService.LoadGeneralsOnlineSettingsAsync();
+            // Load GameSettings separately
+            var goResult = await _gameSettingsService.LoadGameSettingsAsync();
             if (goResult?.Success == true && goResult.Data != null)
             {
-                ApplyGeneralsOnlineSettings(goResult.Data);
-                _logger.LogInformation("Loaded GeneralsOnline settings");
+                ApplyGameSettings(goResult.Data);
+                _logger.LogInformation("Loaded GameSettings");
             }
             else
             {
-                var goErrors = goResult?.Errors ?? ["LoadGeneralsOnlineSettings result was null"];
-                _logger.LogWarning("Failed to load GeneralsOnline settings: {Errors}", string.Join(", ", goErrors));
+                var goErrors = goResult?.Errors ?? ["LoadGameSettings result was null"];
+                _logger.LogWarning("Failed to load GameSettings: {Errors}", string.Join(", ", goErrors));
             }
         }
         catch (Exception ex)
@@ -734,9 +735,9 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
             var options = CreateOptionsFromViewModel();
             var result = await _gameSettingsService.SaveOptionsAsync(SelectedGameType, options);
 
-            // Save GeneralsOnline settings
-            var goSettings = CreateGeneralsOnlineSettings();
-            var goResult = await _gameSettingsService.SaveGeneralsOnlineSettingsAsync(goSettings);
+            // Save GameSettings
+            var goSettings = CreateGameSettings();
+            var goResult = await _gameSettingsService.SaveGameSettingsAsync(goSettings);
 
             if (result?.Success == true && goResult?.Success == true)
             {
@@ -751,7 +752,7 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
                 if (result?.Success == false) errors.AddRange(result.Errors);
                 if (goResult?.Success == false) errors.AddRange(goResult.Errors);
                 if (result == null) errors.Add("SaveOptions result was null");
-                if (goResult == null) errors.Add("SaveGeneralsOnlineSettings result was null");
+                if (goResult == null) errors.Add("SaveGameSettings result was null");
 
                 StatusMessage = $"Failed to save settings: {string.Join(", ", errors)}";
                 _logger.LogWarning("Failed to save settings: {Errors}", string.Join(", ", errors));
@@ -1018,7 +1019,7 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
         return options;
     }
 
-    private void ApplyGeneralsOnlineSettings(GeneralsOnlineSettings settings)
+    private void ApplyGameSettings(GameSettingsRecord settings)
     {
         GoShowFps = settings.ShowFps;
         GoShowPing = settings.ShowPing;
@@ -1046,9 +1047,9 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
         GoSocialNotificationPlayerSendsRequestMenus = settings.SocialNotificationPlayerSendsRequestMenus;
     }
 
-    private GeneralsOnlineSettings CreateGeneralsOnlineSettings()
+    private GameSettingsRecord CreateGameSettings()
     {
-        return new GeneralsOnlineSettings
+        return new GameSettingsRecord
         {
             ShowFps = GoShowFps,
             ShowPing = GoShowPing,
@@ -1074,6 +1075,25 @@ public partial class GameSettingsViewModel(IGameSettingsService gameSettingsServ
             SocialNotificationPlayerAcceptsRequestMenus = GoSocialNotificationPlayerAcceptsRequestMenus,
             SocialNotificationPlayerSendsRequestGameplay = GoSocialNotificationPlayerSendsRequestGameplay,
             SocialNotificationPlayerSendsRequestMenus = GoSocialNotificationPlayerSendsRequestMenus,
+
+            // TSH Properties (added to GameSettings record) - ensuring defaults or mapping if available in VM
+            // These were previously inherited in GeneralsOnlineSettings, but now GameSettings is a standalone record.
+            // If they are not managed in the "Generals Online" section of the VM, they might just take defaults.
+            // However, looking at the VM, there are TSH properties managed separately:
+            ArchiveReplays = TshArchiveReplays,
+            ShowMoneyPerMinute = TshShowMoneyPerMinute,
+            PlayerObserverEnabled = TshPlayerObserverEnabled,
+            SystemTimeFontSize = TshSystemTimeFontSize,
+            NetworkLatencyFontSize = TshNetworkLatencyFontSize,
+            RenderFpsFontSize = TshRenderFpsFontSize,
+            ResolutionFontAdjustment = TshResolutionFontAdjustment,
+            CursorCaptureEnabledInFullscreenGame = TshCursorCaptureEnabledInFullscreenGame,
+            CursorCaptureEnabledInFullscreenMenu = TshCursorCaptureEnabledInFullscreenMenu,
+            CursorCaptureEnabledInWindowedGame = TshCursorCaptureEnabledInWindowedGame,
+            CursorCaptureEnabledInWindowedMenu = TshCursorCaptureEnabledInWindowedMenu,
+            ScreenEdgeScrollEnabledInFullscreenApp = TshScreenEdgeScrollEnabledInFullscreenApp,
+            ScreenEdgeScrollEnabledInWindowedApp = TshScreenEdgeScrollEnabledInWindowedApp,
+            MoneyTransactionVolume = TshMoneyTransactionVolume,
         };
     }
 }

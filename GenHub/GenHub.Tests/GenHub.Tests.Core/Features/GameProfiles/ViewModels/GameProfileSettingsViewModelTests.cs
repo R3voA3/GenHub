@@ -61,6 +61,10 @@ public class GameProfileSettingsViewModelTests
             .Setup(x => x.GetDefaultWorkspaceStrategy())
             .Returns(WorkspaceStrategy.HardLink);
 
+        mockGameSettingsService
+            .Setup(x => x.LoadGameSettingsAsync())
+            .ReturnsAsync(GenHub.Core.Models.Results.OperationResult<GenHub.Core.Models.GameSettings.GameSettings>.CreateSuccess(new GenHub.Core.Models.GameSettings.GameSettings()));
+
         var nullLogger = NullLogger<GameProfileSettingsViewModel>.Instance;
         var gameSettingsLogger = NullLogger<GameSettingsViewModel>.Instance;
 

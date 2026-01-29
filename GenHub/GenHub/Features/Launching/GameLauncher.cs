@@ -1084,8 +1084,8 @@ public class GameLauncher(
                 logger.LogInformation("[GameLauncher] Successfully wrote Options.ini for {GameType}", gameType);
             }
 
-            // Apply GeneralsOnline settings
-            await ApplyGeneralsOnlineSettingsAsync(profile);
+            // Apply GameSettings
+            await ApplyGameSettingsAsync(profile);
         }
         catch (Exception ex)
         {
@@ -1095,10 +1095,10 @@ public class GameLauncher(
     }
 
     /// <summary>
-    /// Applies GeneralsOnline-specific settings to the settings.json file.
+    /// Applies game settings to the settings.json file.
     /// </summary>
     /// <param name="profile">The game profile containing the settings.</param>
-    private async Task ApplyGeneralsOnlineSettingsAsync(GameProfile profile)
+    private async Task ApplyGameSettingsAsync(GameProfile profile)
     {
         // Only apply if it's Zero Hour (as GO settings only apply there currently)
         if (profile.GameClient?.GameType != GameType.ZeroHour)
@@ -1108,28 +1108,26 @@ public class GameLauncher(
 
         try
         {
-            logger.LogInformation("[GameLauncher] Applying GeneralsOnline settings to settings.json for profile {ProfileId}", profile.Id);
+            logger.LogInformation("[GameLauncher] Applying GameSettings to settings.json for profile {ProfileId}", profile.Id);
 
             // Clean Launch Strategy: Create fresh settings object to ensure isolation and prevent pollution
-            var settings = new GeneralsOnlineSettings();
+            // Map settings from profile using the centralized mapper
+            var settings = GameSettingsMapper.CreateGameSettingsFromProfile(profile);
 
-            // Map GO settings from profile using the centralized mapper
-            GameSettingsMapper.ApplyToGeneralsOnlineSettings(profile, settings);
-
-            var saveResult = await gameSettingsService.SaveGeneralsOnlineSettingsAsync(settings);
+            var saveResult = await gameSettingsService.SaveGameSettingsAsync(settings);
             if (!saveResult.Success)
             {
-                logger.LogWarning("[GameLauncher] Failed to save GeneralsOnline settings: {Error}", saveResult.FirstError);
+                logger.LogWarning("[GameLauncher] Failed to save GameSettings: {Error}", saveResult.FirstError);
             }
             else
             {
-                logger.LogInformation("[GameLauncher] Successfully saved GeneralsOnline settings to settings.json");
+                logger.LogInformation("[GameLauncher] Successfully saved GameSettings to settings.json");
             }
         }
         catch (Exception ex)
         {
             // Log and continue
-            logger.LogError(ex, "[GameLauncher] Failed to apply GeneralsOnline settings, continuing with launch");
+            logger.LogError(ex, "[GameLauncher] Failed to apply GameSettings, continuing with launch");
         }
     }
 

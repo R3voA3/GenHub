@@ -278,12 +278,16 @@ public class MainViewModelTests
         var mockLogger = new Mock<ILogger<DownloadsBrowserViewModel>>();
         var mockDiscoverers = Enumerable.Empty<IContentDiscoverer>();
         var mockDownloadService = new Mock<IDownloadService>();
+        var mockSubscriptionStore = new Mock<IPublisherSubscriptionStore>();
+        var mockDependencyResolver = new Mock<ICrossPublisherDependencyResolver>();
 
         return new DownloadsBrowserViewModel(
             mockServiceProvider.Object,
             mockLogger.Object,
             mockDiscoverers,
-            mockDownloadService.Object);
+            mockDownloadService.Object,
+            mockSubscriptionStore.Object,
+            mockDependencyResolver.Object);
     }
 
     /// <summary>

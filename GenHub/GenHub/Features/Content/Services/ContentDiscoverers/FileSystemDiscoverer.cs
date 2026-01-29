@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.Content;
 using GenHub.Core.Models.Content;
@@ -65,6 +64,9 @@ public class FileSystemDiscoverer : IContentDiscoverer
         _manifestDiscoveryService = manifestDiscoveryService;
         _configurationProvider = configurationProvider;
 
+        // [TEMP] DEBUG: FileSystemDiscoverer constructor
+        _logger.LogInformation("[TEMP] FileSystemDiscoverer constructor called");
+
         InitializeContentDirectories();
     }
 
@@ -86,6 +88,13 @@ public class FileSystemDiscoverer : IContentDiscoverer
     public async Task<OperationResult<ContentDiscoveryResult>> DiscoverAsync(
         ContentSearchQuery query, CancellationToken cancellationToken = default)
     {
+        // [TEMP] DEBUG: DiscoverAsync entry point
+        _logger.LogInformation(
+            "[TEMP] FileSystemDiscoverer.DiscoverAsync called - SearchTerm: '{Search}', ContentType: {ContentType}, TargetGame: {TargetGame}",
+            query.SearchTerm,
+            query.ContentType,
+            query.TargetGame);
+
         var discoveredItems = new List<ContentSearchResult>();
 
         // Use ManifestDiscoveryService for comprehensive discovery
@@ -115,7 +124,7 @@ public class FileSystemDiscoverer : IContentDiscoverer
                     ContentType = manifest.ContentType,
                     TargetGame = manifest.TargetGame,
                     ProviderName = SourceName,
-                    AuthorName = manifest.Publisher?.Name ?? GameClientConstants.UnknownVersion,
+                    AuthorName = manifest.Publisher?.Name ?? "Unknown",
                     IconUrl = manifest.Metadata?.IconUrl ?? string.Empty,
                     LastUpdated = manifest.Metadata?.ReleaseDate ?? DateTime.Now,
                     DownloadSize = manifest.Files?.Sum(f => f.Size) ?? 0,
@@ -148,6 +157,8 @@ public class FileSystemDiscoverer : IContentDiscoverer
                 discoveredItems.Add(discovered);
             }
         }
+
+        _logger.LogInformation("[TEMP] FileSystemDiscoverer.DiscoverAsync completed - Found {Count} items", discoveredItems.Count);
 
         return OperationResult<ContentDiscoveryResult>.CreateSuccess(new ContentDiscoveryResult
         {

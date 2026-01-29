@@ -21,7 +21,7 @@ public class IsSubscribedConverter : IMultiValueConverter
     /// <param name="parameter">The converter parameter.</param>
     /// <param name="culture">The culture info.</param>
     /// <returns>An empty array.</returns>
-    public static object?[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
+    public object?[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
     {
         _ = value;
         _ = targetTypes;

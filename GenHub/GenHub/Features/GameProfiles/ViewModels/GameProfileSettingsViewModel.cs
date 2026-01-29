@@ -563,10 +563,10 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
             {
                 try
                 {
-                    var existingGoSettings = await gameSettingsService.LoadGeneralsOnlineSettingsAsync();
+                    var existingGoSettings = await gameSettingsService.LoadGameSettingsAsync();
                     if (existingGoSettings.Success && existingGoSettings.Data != null)
                     {
-                        logger?.LogInformation("Pre-loading existing GeneralsOnline settings for new profile");
+                        logger?.LogInformation("Pre-loading existing GameSettings for new profile");
                         var data = existingGoSettings.Data;
 
                         // Map existing settings to global DTO structure if needed, or directly pass to GameSettingsViewModel
@@ -575,7 +575,7 @@ public partial class GameProfileSettingsViewModel : ViewModelBase, IRecipient<Co
                         var tempProfile = new GameProfile { Id = "temp_new" };
 
                         // Use the Mapper to populate the profile from the settings object
-                        GameSettingsMapper.ApplyFromGeneralsOnlineSettings(data, tempProfile);
+                        GameSettingsMapper.ApplyFromGameSettings(data, tempProfile);
 
                         // Initialize VM with these pre-loaded settings
                         await GameSettingsViewModel.InitializeForProfileAsync(null, tempProfile);

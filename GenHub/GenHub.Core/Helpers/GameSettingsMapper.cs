@@ -97,12 +97,12 @@ public static class GameSettingsMapper
     }
 
     /// <summary>
-    /// Applies settings from GeneralsOnlineSettings to a GameProfile.
+    /// Applies settings from GameSettings to a GameProfile.
     /// Used when creating new profiles to inherit existing GO settings.
     /// </summary>
-    /// <param name="settings">The GeneralsOnlineSettings source.</param>
+    /// <param name="settings">The GameSettings source.</param>
     /// <param name="profile">The GameProfile to populate.</param>
-    public static void ApplyFromGeneralsOnlineSettings(GeneralsOnlineSettings settings, GameProfile profile)
+    public static void ApplyFromGameSettings(GameSettings settings, GameProfile profile)
     {
         // GeneralsOnline settings
         profile.GoShowFps = settings.ShowFps;
@@ -140,7 +140,7 @@ public static class GameSettingsMapper
         profile.GoSocialNotificationPlayerSendsRequestGameplay = settings.SocialNotificationPlayerSendsRequestGameplay;
         profile.GoSocialNotificationPlayerSendsRequestMenus = settings.SocialNotificationPlayerSendsRequestMenus;
 
-        // TSH settings (that exist in GeneralsOnlineSettings via inheritance)
+        // TSH settings (explicit in GameSettings)
         profile.TshArchiveReplays = settings.ArchiveReplays;
         profile.TshMoneyTransactionVolume = settings.MoneyTransactionVolume;
         profile.TshShowMoneyPerMinute = settings.ShowMoneyPerMinute;
@@ -158,65 +158,67 @@ public static class GameSettingsMapper
     }
 
     /// <summary>
-    /// Applies settings from a GameProfile to a GeneralsOnlineSettings object.
+    /// Creates a GameSettings object from a GameProfile.
     /// Used by GameLauncher to prepare settings.json for launch.
     /// </summary>
     /// <param name="profile">The GameProfile source.</param>
-    /// <param name="settings">The GeneralsOnlineSettings to populate.</param>
-    public static void ApplyToGeneralsOnlineSettings(GameProfile profile, GeneralsOnlineSettings settings)
+    /// <returns>The created GameSettings object.</returns>
+    public static GameSettings CreateGameSettingsFromProfile(GameProfile profile)
     {
-        // GeneralsOnline settings - use null-coalescing with model defaults
-        // This ensures predictable behavior: always set a value, never rely on constructor defaults
-        settings.ShowFps = profile.GoShowFps ?? false;
-        settings.ShowPing = profile.GoShowPing ?? true;
-        settings.ShowPlayerRanks = profile.GoShowPlayerRanks ?? true;
-        settings.AutoLogin = profile.GoAutoLogin ?? false;
-        settings.RememberUsername = profile.GoRememberUsername ?? true;
-        settings.EnableNotifications = profile.GoEnableNotifications ?? true;
-        settings.EnableSoundNotifications = profile.GoEnableSoundNotifications ?? true;
-        settings.ChatFontSize = profile.GoChatFontSize ?? 12;
+        return new GameSettings
+        {
+            // GeneralsOnline settings - use null-coalescing with model defaults
+            ShowFps = profile.GoShowFps ?? false,
+            ShowPing = profile.GoShowPing ?? true,
+            ShowPlayerRanks = profile.GoShowPlayerRanks ?? true,
+            AutoLogin = profile.GoAutoLogin ?? false,
+            RememberUsername = profile.GoRememberUsername ?? true,
+            EnableNotifications = profile.GoEnableNotifications ?? true,
+            EnableSoundNotifications = profile.GoEnableSoundNotifications ?? true,
+            ChatFontSize = profile.GoChatFontSize ?? 12,
 
-        // Camera settings
-        settings.CameraMaxHeightOnlyWhenLobbyHost = profile.GoCameraMaxHeightOnlyWhenLobbyHost ?? 310.0f;
-        settings.CameraMinHeight = profile.GoCameraMinHeight ?? 310.0f;
-        settings.CameraMoveSpeedRatio = profile.GoCameraMoveSpeedRatio ?? 1.5f;
+            // Camera settings
+            CameraMaxHeightOnlyWhenLobbyHost = profile.GoCameraMaxHeightOnlyWhenLobbyHost ?? 310.0f,
+            CameraMinHeight = profile.GoCameraMinHeight ?? 310.0f,
+            CameraMoveSpeedRatio = profile.GoCameraMoveSpeedRatio ?? 1.5f,
 
-        // Chat settings
-        settings.ChatDurationSecondsUntilFadeOut = profile.GoChatDurationSecondsUntilFadeOut ?? 30;
+            // Chat settings
+            ChatDurationSecondsUntilFadeOut = profile.GoChatDurationSecondsUntilFadeOut ?? 30,
 
-        // Debug settings
-        settings.DebugVerboseLogging = profile.GoDebugVerboseLogging ?? false;
+            // Debug settings
+            DebugVerboseLogging = profile.GoDebugVerboseLogging ?? false,
 
-        // Render settings
-        settings.RenderFpsLimit = profile.GoRenderFpsLimit ?? 144;
-        settings.RenderLimitFramerate = profile.GoRenderLimitFramerate ?? true;
-        settings.RenderStatsOverlay = profile.GoRenderStatsOverlay ?? true;
+            // Render settings
+            RenderFpsLimit = profile.GoRenderFpsLimit ?? 144,
+            RenderLimitFramerate = profile.GoRenderLimitFramerate ?? true,
+            RenderStatsOverlay = profile.GoRenderStatsOverlay ?? true,
 
-        // Social notification settings
-        settings.SocialNotificationFriendComesOnlineGameplay = profile.GoSocialNotificationFriendComesOnlineGameplay ?? true;
-        settings.SocialNotificationFriendComesOnlineMenus = profile.GoSocialNotificationFriendComesOnlineMenus ?? true;
-        settings.SocialNotificationFriendGoesOfflineGameplay = profile.GoSocialNotificationFriendGoesOfflineGameplay ?? true;
-        settings.SocialNotificationFriendGoesOfflineMenus = profile.GoSocialNotificationFriendGoesOfflineMenus ?? true;
-        settings.SocialNotificationPlayerAcceptsRequestGameplay = profile.GoSocialNotificationPlayerAcceptsRequestGameplay ?? true;
-        settings.SocialNotificationPlayerAcceptsRequestMenus = profile.GoSocialNotificationPlayerAcceptsRequestMenus ?? true;
-        settings.SocialNotificationPlayerSendsRequestGameplay = profile.GoSocialNotificationPlayerSendsRequestGameplay ?? true;
-        settings.SocialNotificationPlayerSendsRequestMenus = profile.GoSocialNotificationPlayerSendsRequestMenus ?? true;
+            // Social notification settings
+            SocialNotificationFriendComesOnlineGameplay = profile.GoSocialNotificationFriendComesOnlineGameplay ?? true,
+            SocialNotificationFriendComesOnlineMenus = profile.GoSocialNotificationFriendComesOnlineMenus ?? true,
+            SocialNotificationFriendGoesOfflineGameplay = profile.GoSocialNotificationFriendGoesOfflineGameplay ?? true,
+            SocialNotificationFriendGoesOfflineMenus = profile.GoSocialNotificationFriendGoesOfflineMenus ?? true,
+            SocialNotificationPlayerAcceptsRequestGameplay = profile.GoSocialNotificationPlayerAcceptsRequestGameplay ?? true,
+            SocialNotificationPlayerAcceptsRequestMenus = profile.GoSocialNotificationPlayerAcceptsRequestMenus ?? true,
+            SocialNotificationPlayerSendsRequestGameplay = profile.GoSocialNotificationPlayerSendsRequestGameplay ?? true,
+            SocialNotificationPlayerSendsRequestMenus = profile.GoSocialNotificationPlayerSendsRequestMenus ?? true,
 
-        // TSH settings (that exist in settings.json) - use null-coalescing with defaults
-        settings.ArchiveReplays = profile.TshArchiveReplays ?? false;
-        settings.MoneyTransactionVolume = profile.TshMoneyTransactionVolume ?? 50;
-        settings.ShowMoneyPerMinute = profile.TshShowMoneyPerMinute ?? false;
-        settings.PlayerObserverEnabled = profile.TshPlayerObserverEnabled ?? false;
-        settings.SystemTimeFontSize = profile.TshSystemTimeFontSize ?? 12;
-        settings.NetworkLatencyFontSize = profile.TshNetworkLatencyFontSize ?? 12;
-        settings.RenderFpsFontSize = profile.TshRenderFpsFontSize ?? 12;
-        settings.ResolutionFontAdjustment = profile.TshResolutionFontAdjustment ?? -100;
-        settings.CursorCaptureEnabledInFullscreenGame = profile.TshCursorCaptureEnabledInFullscreenGame ?? false;
-        settings.CursorCaptureEnabledInFullscreenMenu = profile.TshCursorCaptureEnabledInFullscreenMenu ?? false;
-        settings.CursorCaptureEnabledInWindowedGame = profile.TshCursorCaptureEnabledInWindowedGame ?? false;
-        settings.CursorCaptureEnabledInWindowedMenu = profile.TshCursorCaptureEnabledInWindowedMenu ?? false;
-        settings.ScreenEdgeScrollEnabledInFullscreenApp = profile.TshScreenEdgeScrollEnabledInFullscreenApp ?? false;
-        settings.ScreenEdgeScrollEnabledInWindowedApp = profile.TshScreenEdgeScrollEnabledInWindowedApp ?? false;
+            // TSH settings (that exist in settings.json) - use null-coalescing with defaults
+            ArchiveReplays = profile.TshArchiveReplays ?? false,
+            MoneyTransactionVolume = profile.TshMoneyTransactionVolume ?? 50,
+            ShowMoneyPerMinute = profile.TshShowMoneyPerMinute ?? false,
+            PlayerObserverEnabled = profile.TshPlayerObserverEnabled ?? false,
+            SystemTimeFontSize = profile.TshSystemTimeFontSize ?? 12,
+            NetworkLatencyFontSize = profile.TshNetworkLatencyFontSize ?? 12,
+            RenderFpsFontSize = profile.TshRenderFpsFontSize ?? 12,
+            ResolutionFontAdjustment = profile.TshResolutionFontAdjustment ?? -100,
+            CursorCaptureEnabledInFullscreenGame = profile.TshCursorCaptureEnabledInFullscreenGame ?? false,
+            CursorCaptureEnabledInFullscreenMenu = profile.TshCursorCaptureEnabledInFullscreenMenu ?? false,
+            CursorCaptureEnabledInWindowedGame = profile.TshCursorCaptureEnabledInWindowedGame ?? false,
+            CursorCaptureEnabledInWindowedMenu = profile.TshCursorCaptureEnabledInWindowedMenu ?? false,
+            ScreenEdgeScrollEnabledInFullscreenApp = profile.TshScreenEdgeScrollEnabledInFullscreenApp ?? false,
+            ScreenEdgeScrollEnabledInWindowedApp = profile.TshScreenEdgeScrollEnabledInWindowedApp ?? false,
+        };
     }
 
     /// <summary>

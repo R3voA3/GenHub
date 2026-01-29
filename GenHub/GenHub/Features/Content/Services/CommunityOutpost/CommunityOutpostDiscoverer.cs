@@ -402,8 +402,8 @@ public partial class CommunityOutpostDiscoverer(
             {
                 Id = $"{CommunityOutpostConstants.PublisherId}.{item.ContentCode}",
                 Name = metadata.DisplayName,
-                Description = metadata.Description ?? string.Empty,
-                Version = metadata.Version ?? "1.0",
+                Description = metadata.Description,
+                Version = metadata.Version,
                 ContentType = metadata.ContentType,
                 TargetGame = metadata.TargetGame,
                 ProviderName = SourceName,
