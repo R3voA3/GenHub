@@ -17,22 +17,12 @@ namespace GenHub.Features.Content.Services.CommunityOutpost;
 /// Converts AVIF images to TGA format for use with Command &amp; Conquer Generals/Zero Hour.
 /// The game requires TGA textures, but GenPatcher dat archives contain AVIF files for compression.
 /// </summary>
-public class AvifToTgaConverter
+public class AvifToTgaConverter(ILogger<AvifToTgaConverter> logger)
 {
-    private readonly ILogger<AvifToTgaConverter> _logger;
-    private readonly Configuration _imageSharpConfig;
+    private readonly ILogger<AvifToTgaConverter> _logger = logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AvifToTgaConverter"/> class.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    public AvifToTgaConverter(ILogger<AvifToTgaConverter> logger)
-    {
-        _logger = logger;
-
-        // Configure ImageSharp to support AVIF decoding
-        _imageSharpConfig = new Configuration(new AvifConfigurationModule());
-    }
+    // Configure ImageSharp to support AVIF decoding
+    private readonly Configuration _imageSharpConfig = new(new AvifConfigurationModule());
 
     /// <summary>
     /// Converts all AVIF files in a directory (and subdirectories) to TGA format.
@@ -49,37 +39,57 @@ public class AvifToTgaConverter
             return 0;
         }
 
-        var avifFiles = Directory.GetFiles(directory, "*.avif", SearchOption.AllDirectories);
-        _logger.LogInformation("Found {Count} AVIF files to convert in {Directory}", avifFiles.Length, directory);
-
-        int converted = 0;
-
-        foreach (var avifFile in avifFiles)
+        try
         {
-            if (cancellationToken.IsCancellationRequested)
+            var avifFiles = Directory.EnumerateFiles(directory, "*.avif", SearchOption.AllDirectories);
+            int converted = 0;
+            int totalFound = 0;
+
+            foreach (var avifFile in avifFiles)
             {
-                break;
+                totalFound++;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var tgaFile = Path.ChangeExtension(avifFile, ".tga");
+                    await ConvertFileAsync(avifFile, tgaFile, cancellationToken);
+
+                    // Delete the original AVIF file only if TGA exists and has content
+                    var tgaInfo = new FileInfo(tgaFile);
+                    if (tgaInfo.Exists && tgaInfo.Length > 0)
+                    {
+                        File.Delete(avifFile);
+                        converted++;
+                        _logger.LogDebug("Converted {AvifFile} to {TgaFile}", avifFile, tgaFile);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Conversion produced no output for {AvifFile}", avifFile);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to convert {AvifFile}", avifFile);
+                }
             }
 
-            try
-            {
-                var tgaFile = Path.ChangeExtension(avifFile, ".tga");
-                await ConvertFileAsync(avifFile, tgaFile, cancellationToken);
-
-                // Delete the original AVIF file
-                File.Delete(avifFile);
-                converted++;
-
-                _logger.LogDebug("Converted {AvifFile} to {TgaFile}", avifFile, tgaFile);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to convert {AvifFile}", avifFile);
-            }
+            _logger.LogInformation("Successfully converted {Converted} of {Total} AVIF files to TGA in {Directory}", converted, totalFound, directory);
+            return converted;
         }
-
-        _logger.LogInformation("Successfully converted {Converted} of {Total} AVIF files to TGA", converted, avifFiles.Length);
-        return converted;
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "Access denied to directory or subdirectories: {Directory}", directory);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enumerate files in directory: {Directory}", directory);
+            return 0;
+        }
     }
 
     /// <summary>
@@ -94,6 +104,7 @@ public class AvifToTgaConverter
         await Task.Run(
             () =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 using var inputStream = File.OpenRead(sourcePath);
 
                 var decoderOptions = new DecoderOptions
@@ -101,6 +112,7 @@ public class AvifToTgaConverter
                     Configuration = _imageSharpConfig,
                 };
 
+                cancellationToken.ThrowIfCancellationRequested();
                 using var image = Image.Load(decoderOptions, inputStream);
 
                 // Create directory for output if it doesn't exist
@@ -109,6 +121,8 @@ public class AvifToTgaConverter
                 {
                     Directory.CreateDirectory(destDir);
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // Save as TGA with appropriate settings for Generals
                 // The game expects 32-bit BGRA TGA files with RLE compression

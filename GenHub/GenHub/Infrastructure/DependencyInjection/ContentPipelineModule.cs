@@ -210,7 +210,7 @@ public static class ContentPipelineModule
 
         // Register Community Outpost manifest factory
         services.AddTransient<CommunityOutpostManifestFactory>();
-        services.AddTransient<IPublisherManifestFactory, CommunityOutpostManifestFactory>();
+        services.AddTransient<IPublisherManifestFactory>(sp => sp.GetRequiredService<CommunityOutpostManifestFactory>());
 
         // Register Community Outpost update service
         services.AddSingleton<CommunityOutpostUpdateService>();

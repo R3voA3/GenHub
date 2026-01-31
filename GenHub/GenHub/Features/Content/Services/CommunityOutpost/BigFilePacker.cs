@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,6 +15,18 @@ public static class BigFilePacker
 {
     private const string Signature = "BIGF";
 
+    private static readonly string[] KnownRoots =
+    [
+        "Data\\",
+        "Art\\",
+        "Audio\\",
+        "W3D\\",
+        "Textures\\",
+        "Shaders\\",
+        "Maps\\",
+        "INI\\",
+    ];
+
     /// <summary>
     /// Packs the contents of a directory into a .big file.
     /// </summary>
@@ -22,7 +35,16 @@ public static class BigFilePacker
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public static async Task PackAsync(string sourceDirectory, string destinationPath)
     {
-        var files = Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories);
+        var destinationFullPath = Path.GetFullPath(destinationPath);
+        var files = Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories)
+            .Where(f => !Path.GetFullPath(f).Equals(destinationFullPath, StringComparison.OrdinalIgnoreCase))
+            .Select(f => new
+            {
+                FullPath = f,
+                RelativePath = NormalizeBigPath(Path.GetRelativePath(sourceDirectory, f).Replace('/', '\\')),
+            })
+            .OrderBy(f => f.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var entries = new List<BigFileEntry>();
 
         // Calculate header size
@@ -31,8 +53,14 @@ public static class BigFilePacker
 
         foreach (var file in files)
         {
-            var relativePath = Path.GetRelativePath(sourceDirectory, file).Replace('/', '\\');
-            relativePath = NormalizeBigPath(relativePath);
+            var relativePath = file.RelativePath;
+
+            // Validate components are ASCII-only
+            if (relativePath.Any(c => c > 127))
+            {
+                 throw new NotSupportedException($"File path contains non-ASCII characters, which are not supported by the .big format: {relativePath}");
+            }
+
             var encoding = Encoding.ASCII;
             var nameBytes = encoding.GetBytes(relativePath);
 
@@ -41,14 +69,18 @@ public static class BigFilePacker
 
             entries.Add(new BigFileEntry
             {
-                FullPath = file,
+                FullPath = file.FullPath,
                 RelativePath = relativePath,
-                Size = new FileInfo(file).Length,
+                Size = new FileInfo(file.FullPath).Length,
             });
         }
 
-        // Calculate total size
+        // Calculate total size and check for BIG format overflow (4GB limit)
         long totalSize = headerSize + entries.Sum(e => e.Size);
+        if (totalSize > uint.MaxValue)
+        {
+            throw new NotSupportedException($"Generated BIG archive size ({totalSize} bytes) exceeds the 4GB limit supported by the .big format.");
+        }
 
         using var fs = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
         using var writer = new BinaryWriter(fs);
@@ -74,9 +106,15 @@ public static class BigFilePacker
         }
 
         // Write Data
+        writer.Flush();
         foreach (var entry in entries)
         {
             using var fileStream = File.OpenRead(entry.FullPath);
+            if (fileStream.Length != entry.Size)
+            {
+                throw new IOException($"File size changed during packing for {entry.RelativePath}. Expected {entry.Size} bytes, found {fileStream.Length} bytes.");
+            }
+
             await fileStream.CopyToAsync(fs);
         }
     }
@@ -88,13 +126,9 @@ public static class BigFilePacker
     /// <param name="value">The value to write.</param>
     private static void WriteUInt32BigEndian(BinaryWriter writer, uint value)
     {
-        var bytes = BitConverter.GetBytes(value);
-        if (BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(bytes);
-        }
-
-        writer.Write(bytes);
+        Span<byte> buffer = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(buffer, value);
+        writer.Write(buffer);
     }
 
     private static string NormalizeBigPath(string relativePath)
@@ -115,17 +149,7 @@ public static class BigFilePacker
         }
 
         // If the path still contains extra leading folders, cut to known game roots
-        var roots = new[]
-        {
-            "Data\\",
-            "Art\\",
-            "Audio\\",
-            "W3D\\",
-            "Textures\\",
-            "Shaders\\",
-            "Maps\\",
-            "INI\\",
-        };
+        var roots = KnownRoots;
 
         var bestIndex = -1;
         foreach (var root in roots)
@@ -137,7 +161,8 @@ public static class BigFilePacker
             }
         }
 
-        return bestIndex > 0 ? path[bestIndex..] : path;
+        var result = bestIndex > 0 ? path[bestIndex..] : path;
+        return string.IsNullOrWhiteSpace(result) ? path : result;
     }
 
     private class BigFileEntry

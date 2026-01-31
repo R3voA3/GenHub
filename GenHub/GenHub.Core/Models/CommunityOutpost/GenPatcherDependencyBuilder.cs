@@ -21,6 +21,13 @@ namespace GenHub.Core.Models.CommunityOutpost;
 /// </remarks>
 public static class GenPatcherDependencyBuilder
 {
+    // Maintenance Note: These static lists must be updated when new content codes are added to GenPatcher.
+    // They centralize conflict and category knowledge but require manual updates.
+    private static readonly List<string> ControlBarCodes = ["cbpr", "cbpx"];
+    private static readonly List<string> ZeroHourCameraCodes = ["crzh", "dczh"];
+    private static readonly List<string> GeneralsCameraCodes = ["crgn"];
+    private static readonly List<string> HotkeyCodes = ["ewba", "ewbi", "hlde", "hleg", "hlei"];
+
     /// <summary>
     /// Gets the dependencies for a given content code and metadata.
     /// </summary>
@@ -60,11 +67,11 @@ public static class GenPatcherDependencyBuilder
                 break;
 
             case GenPatcherContentCategory.Tools:
-                AddToolDependencies(dependencies, contentCode, metadata);
+                AddToolDependencies(dependencies, contentCode);
                 break;
 
             case GenPatcherContentCategory.Maps:
-                AddMapDependencies(dependencies, metadata);
+                AddMapDependencies(dependencies);
                 break;
 
             case GenPatcherContentCategory.Visuals:
@@ -274,32 +281,28 @@ public static class GenPatcherDependencyBuilder
             return [];
         }
 
-        bool IsNonBaseDependency(string code) => !GenPatcherContentRegistry.GetMetadata(code).IsBaseDependency;
+        static bool IsNonBaseDependency(string code) => !GenPatcherContentRegistry.GetMetadata(code).IsBaseDependency;
 
         return metadata.Category switch
         {
             // Control bars conflict with each other
             // NOTE: cbbs (Base) and cben (Language) are dependencies, not variants - they don't conflict
             // Only the actual control bar variants (Pro ExiLe, Pro Xezon) conflict
-            GenPatcherContentCategory.ControlBar => new List<string>
-            {
-                "cbpr", "cbpx",
-            }.FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase) && IsNonBaseDependency(c)),
+            GenPatcherContentCategory.ControlBar => ControlBarCodes
+                .FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase) && IsNonBaseDependency(c)),
 
             // Camera mods for the same game conflict
             GenPatcherContentCategory.Camera when metadata.TargetGame == GameType.ZeroHour =>
-                new List<string> { "crzh", "dczh" }
+                ZeroHourCameraCodes
                     .FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase)),
 
             GenPatcherContentCategory.Camera when metadata.TargetGame == GameType.Generals =>
-                new List<string> { "crgn" }
+                GeneralsCameraCodes
                     .FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase)),
 
             // Hotkey configs might conflict
-            GenPatcherContentCategory.Hotkeys => new List<string>
-            {
-                "ewba", "ewbi", "hlde", "hleg", "hlei",
-            }.FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase) && IsNonBaseDependency(c)),
+            GenPatcherContentCategory.Hotkeys => HotkeyCodes
+                .FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase) && IsNonBaseDependency(c)),
 
             _ => [],
         };
@@ -357,17 +360,18 @@ public static class GenPatcherDependencyBuilder
         // Specific control bar dependencies based on content code
         var code = metadata.ContentCode.ToLowerInvariant();
 
-        // cbpr and cbpx require both cbbs (HD Base) and cbpc (Pro Core)
+        // cbpr and cbpx require cbpc (Pro Core) and cben (Language)
+        // NOTE: cbbs (HD Base) is NOT required - verified from GenPatcher source
         if (code == "cbpr" || code == "cbpx")
         {
-            dependencies.Add(CreateControlBarBaseDependency());
             dependencies.Add(CreateControlBarProCoreDependency());
-
-            // Pro variants require GenTool
-            dependencies.Add(CreateGenToolDependency());
-
-            // Also require language pack
             dependencies.Add(CreateControlBarLanguageDependency());
+
+            // Pro variants require GenTool (replaces the optional one added above)
+            // Filter by content code to avoid fragile name matching
+            var gentDependencyId = CreateOptionalGenToolDependency().Id;
+            dependencies.RemoveAll(d => d.Id.Equals(gentDependencyId));
+            dependencies.Add(CreateGenToolDependency());
         }
 
         // cbpc requires cbbs (HD Base)
@@ -421,15 +425,23 @@ public static class GenPatcherDependencyBuilder
         if (metadata.ContentCode.Equals("hlei", StringComparison.OrdinalIgnoreCase) ||
             metadata.ContentCode.Equals("hleg", StringComparison.OrdinalIgnoreCase))
         {
-            dependencies.Add(new ContentDependency
-            {
-                Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.hlenenglish"),
-                Name = "Leikeze/Legionnaire Hotkeys Indicators (provides visual overlay icons)",
-                DependencyType = ContentType.Addon,
-                InstallBehavior = DependencyInstallBehavior.AutoInstall,
-                IsOptional = false,
-            });
+            AddHotkeyIndicatorDependency(dependencies);
         }
+    }
+
+    /// <summary>
+    /// Adds the indicators pack dependency for hotkeys.
+    /// </summary>
+    private static void AddHotkeyIndicatorDependency(List<ContentDependency> dependencies)
+    {
+        dependencies.Add(new ContentDependency
+        {
+            Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.hlen"),
+            Name = "Leikeze/Legionnaire Hotkeys Indicators (provides visual overlay icons)",
+            DependencyType = ContentType.Addon,
+            InstallBehavior = DependencyInstallBehavior.AutoInstall,
+            IsOptional = false,
+        });
     }
 
     /// <summary>
@@ -438,8 +450,7 @@ public static class GenPatcherDependencyBuilder
     /// </summary>
     private static void AddToolDependencies(
         List<ContentDependency> dependencies,
-        string contentCode,
-        GenPatcherContentMetadata metadata)
+        string contentCode)
     {
         var code = contentCode.ToLowerInvariant();
 
@@ -475,8 +486,7 @@ public static class GenPatcherDependencyBuilder
     /// Maps require the patched game to load correctly.
     /// </summary>
     private static void AddMapDependencies(
-        List<ContentDependency> dependencies,
-        GenPatcherContentMetadata metadata)
+        List<ContentDependency> dependencies)
     {
         // Maps need the patched game
         dependencies.Add(CreateZeroHour104Dependency());

@@ -42,23 +42,28 @@ public class ContentOrchestrator : IContentOrchestrator
     /// <summary>
     /// Gets the installation path for a game installation.
     /// </summary>
-    private static string? GetInstallationPath(IGameInstallation installation)
+    private static string? GetInstallationPath(GenHub.Core.Models.GameInstallations.GameInstallation? installation)
     {
+        if (installation == null)
+        {
+            return null;
+        }
+
         // For Zero Hour installations, use the installation path directly
         // For Generals-only installations, use the Generals path
         if (!string.IsNullOrEmpty(installation.InstallationPath))
         {
-            return Path.GetDirectoryName(installation.InstallationPath);
+            return installation.InstallationPath;
         }
 
         if (!string.IsNullOrEmpty(installation.ZeroHourPath))
         {
-            return Path.GetDirectoryName(installation.ZeroHourPath);
+            return installation.ZeroHourPath;
         }
 
         if (!string.IsNullOrEmpty(installation.GeneralsPath))
         {
-            return Path.GetDirectoryName(installation.GeneralsPath);
+            return installation.GeneralsPath;
         }
 
         return null;
@@ -508,58 +513,46 @@ public class ContentOrchestrator : IContentOrchestrator
                 }
 
                 // Step 5: Full validation (manifest + files)
-                // Skip file validation if content is already in CAS (deliverer stored it directly)
-                // This happens when deliverer extracts, stores to CAS, marks as ContentAddressable, and cleans up staging
-                var isAlreadyInCas = prepareResult.Data.Files.All(f => f.SourceType == ContentSourceType.ContentAddressable);
-
-                if (isAlreadyInCas)
+                // Always validate to ensure content integrity, even if nominally in CAS
+                progress?.Report(new ContentAcquisitionProgress
                 {
-                    _logger.LogInformation(
-                        "Skipping file validation for manifest {ManifestId} - content already stored in CAS by deliverer",
-                        prepareResult.Data.Id);
-                }
-                else
-                {
-                    progress?.Report(new ContentAcquisitionProgress
-                    {
-                        Phase = ContentAcquisitionPhase.ValidatingFiles,
-                        ProgressPercentage = ContentConstants.ProgressStepValidatingFiles,
-                        CurrentOperation = "Validating prepared content files",
-                    });
+                    Phase = ContentAcquisitionPhase.ValidatingFiles,
+                    ProgressPercentage = ContentConstants.ProgressStepValidatingFiles,
+                    CurrentOperation = "Validating prepared content files",
+                });
 
-                    // Forward orchestrator progress into validator
-                    IProgress<ValidationProgress>? validationProgress = null;
-                    if (progress != null)
+                // Forward orchestrator progress into validator
+                IProgress<ValidationProgress>? validationProgress = null;
+                if (progress != null)
+                {
+                    validationProgress = new Progress<ValidationProgress>(vp =>
                     {
-                        validationProgress = new Progress<ValidationProgress>(vp =>
+                        // Map validation progress (0-100) into 70-80% range for acquisition
+                        var pct = ContentConstants.ProgressStepValidatingFiles + (int)(vp.PercentComplete / 10.0);
+                        progress.Report(new ContentAcquisitionProgress
                         {
-                            // Map validation progress (0-100) into 70-80% range for acquisition
-                            var pct = ContentConstants.ProgressStepValidatingFiles + (int)(vp.PercentComplete / 10.0);
-                            progress.Report(new ContentAcquisitionProgress
-                            {
-                                Phase = ContentAcquisitionPhase.ValidatingFiles,
-                                ProgressPercentage = pct,
-                                CurrentOperation = vp.CurrentFile ?? "Validating files",
-                                FilesProcessed = vp.Processed,
-                                TotalFiles = vp.Total,
-                            });
+                            Phase = ContentAcquisitionPhase.ValidatingFiles,
+                            ProgressPercentage = pct,
+                            CurrentOperation = vp.CurrentFile ?? "Validating files",
+                            FilesProcessed = vp.Processed,
+                            TotalFiles = vp.Total,
                         });
-                    }
+                    });
+                }
 
-                    var fullValidation = await _contentValidator.ValidateAllAsync(
-                        stagingDir,
-                        prepareResult.Data,
-                        validationProgress,
-                        cancellationToken);
+                var fullValidation = await _contentValidator.ValidateAllAsync(
+                    stagingDir,
+                    prepareResult.Data,
+                    validationProgress,
+                    cancellationToken);
 
-                    if (!fullValidation.IsValid)
+                if (!fullValidation.IsValid)
+                {
+                    var errors = fullValidation.Issues.Where(i => i.Severity == ValidationSeverity.Error).ToList();
+                    if (errors.Count > 0)
                     {
-                        var errors = fullValidation.Issues.Where(i => i.Severity == ValidationSeverity.Error).ToList();
-                        if (errors.Count > 0)
-                        {
-                            return OperationResult<ContentManifest>.CreateFailure(
-                                errors.Select(e => $"Content validation failed: {e.Message}"));
-                        }
+                        return OperationResult<ContentManifest>.CreateFailure(
+                            errors.Select(e => $"Content validation failed: {e.Message}"));
                     }
                 }
 
@@ -583,7 +576,12 @@ public class ContentOrchestrator : IContentOrchestrator
                     // This prevents content from being stored in the wrong CAS pool (e.g., C: drive instead of game-adjacent pool)
                     if (prepareResult.Data.ContentType == ContentType.GameClient)
                     {
-                        await EnsureInstallationPoolPathAsync(cancellationToken);
+                        var success = await EnsureInstallationPoolPathAsync(cancellationToken);
+                        if (!success)
+                        {
+                            return OperationResult<ContentManifest>.CreateFailure(
+                                "Could not ensure InstallationPoolRootPath for GameClient content. A valid game installation is required.");
+                        }
                     }
 
                     await _manifestPool.AddManifestAsync(prepareResult.Data, stagingDir, cancellationToken: cancellationToken);
@@ -689,7 +687,8 @@ public class ContentOrchestrator : IContentOrchestrator
     /// Ensures the InstallationPoolRootPath is set before storing GameClient content.
     /// This prevents content from being stored in the wrong CAS pool.
     /// </summary>
-    private async Task EnsureInstallationPoolPathAsync(CancellationToken cancellationToken)
+    /// <returns>True if the path was successfully ensured or auto-set.</returns>
+    private async Task<bool> EnsureInstallationPoolPathAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -704,7 +703,7 @@ public class ContentOrchestrator : IContentOrchestrator
             if (!installationsResult.Success || installationsResult.Data == null)
             {
                 _logger.LogWarning("Failed to get installations for CAS pool path resolution: {Error}", installationsResult.FirstError);
-                return;
+                return false;
             }
 
             var installations = installationsResult.Data.ToList();
@@ -712,7 +711,7 @@ public class ContentOrchestrator : IContentOrchestrator
             if (installations.Count == 0)
             {
                 _logger.LogWarning("No installations detected - cannot set InstallationPoolRootPath");
-                return;
+                return false;
             }
 
             // If only one installation, use it
@@ -725,22 +724,21 @@ public class ContentOrchestrator : IContentOrchestrator
                     var casPoolPath = Path.Combine(installationPath, ".genhub-cas");
                     _logger.LogInformation("Auto-setting InstallationPoolRootPath to single installation: {Path}", casPoolPath);
 
-                    await _userSettingsService.TryUpdateAndSaveAsync(s =>
+                    return await _userSettingsService.TryUpdateAndSaveAsync(s =>
                     {
                         s.CasConfiguration.InstallationPoolRootPath = casPoolPath;
                         s.PreferredStorageInstallationId = installation.Id;
                         s.MarkAsExplicitlySet(nameof(s.CasConfiguration.InstallationPoolRootPath));
                         return true;
                     });
-
-                    return;
                 }
             }
 
             // If multiple installations, prefer Steam over EA App
+            // Note: Since we verified installations.Count >= 1, this will never be null
             var preferredInstallation = installations.FirstOrDefault(i => i.InstallationType == GameInstallationType.Steam)
                 ?? installations.FirstOrDefault(i => i.InstallationType == GameInstallationType.EaApp)
-                ?? installations.FirstOrDefault();
+                ?? installations.First();
 
             if (preferredInstallation != null)
             {
@@ -750,7 +748,7 @@ public class ContentOrchestrator : IContentOrchestrator
                     var casPoolPath = Path.Combine(installationPath, ".genhub-cas");
                     _logger.LogInformation("Auto-setting InstallationPoolRootPath to preferred installation ({InstallationType}): {Path}", preferredInstallation.InstallationType, casPoolPath);
 
-                    await _userSettingsService.TryUpdateAndSaveAsync(s =>
+                    return await _userSettingsService.TryUpdateAndSaveAsync(s =>
                     {
                         s.CasConfiguration.InstallationPoolRootPath = casPoolPath;
                         s.PreferredStorageInstallationId = preferredInstallation.Id;
@@ -759,14 +757,14 @@ public class ContentOrchestrator : IContentOrchestrator
                     });
                 }
             }
-            else
-            {
-                _logger.LogWarning("No valid installation found for CAS pool path resolution");
-            }
+
+            // Should not be reachable given the checks above
+            return false;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to ensure InstallationPoolRootPath is set");
+            return false;
         }
     }
 }

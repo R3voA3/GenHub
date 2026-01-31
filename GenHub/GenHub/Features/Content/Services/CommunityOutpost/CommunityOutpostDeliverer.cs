@@ -41,6 +41,27 @@ public class CommunityOutpostDeliverer(
    ILogger<CommunityOutpostDeliverer> logger)
    : IContentDeliverer
 {
+    private static (string Code, GenPatcherContentMetadata Metadata) NormalizeContentCode(string contentCode)
+    {
+        // For some content (like cbprc), the code may have a language suffix (e - english)
+        // Strip it if it's there and try that way too
+        var actualContentCode = contentCode.ToLowerInvariant();
+        var depMetadata = GenPatcherContentRegistry.GetMetadata(actualContentCode);
+
+        if (depMetadata.ContentType == ContentType.UnknownContentType && actualContentCode.Length == 5)
+        {
+            var strippedCode = actualContentCode[..4];
+            var strippedMetadata = GenPatcherContentRegistry.GetMetadata(strippedCode);
+            if (strippedMetadata.ContentType != ContentType.UnknownContentType)
+            {
+                actualContentCode = strippedCode;
+                depMetadata = strippedMetadata;
+            }
+        }
+
+        return (actualContentCode, depMetadata);
+    }
+
     /// <summary>
     /// Extracts the content code from the manifest metadata.
     /// </summary>
@@ -61,32 +82,39 @@ public class CommunityOutpostDeliverer(
     /// <summary>
     /// Gets the installation path for a game installation.
     /// </summary>
-    private static string? GetInstallationPath(IGameInstallation installation)
+    private static string? GetInstallationPath(GameInstallation installation)
     {
         // For Zero Hour installations, use the installation path directly
         // For Generals-only installations, use the Generals path
         if (!string.IsNullOrEmpty(installation.InstallationPath))
         {
-            return Path.GetDirectoryName(installation.InstallationPath);
+            // If the path points to a file (e.g. generals.exe), return the directory
+            if (Path.HasExtension(installation.InstallationPath))
+            {
+                return Path.GetDirectoryName(installation.InstallationPath);
+            }
+
+            return installation.InstallationPath;
         }
 
         if (!string.IsNullOrEmpty(installation.ZeroHourPath))
         {
-            return Path.GetDirectoryName(installation.ZeroHourPath);
+            return installation.ZeroHourPath;
         }
 
         if (!string.IsNullOrEmpty(installation.GeneralsPath))
         {
-            return Path.GetDirectoryName(installation.GeneralsPath);
+            return installation.GeneralsPath;
         }
 
         return null;
     }
 
     /// <summary>
-    /// Extracts a 7z archive asynchronously using SharpCompress.
+    /// Extracts an archive (ZIP, 7z, etc.) asynchronously using SharpCompress.
+    /// Automatically detects format.
     /// </summary>
-    private static async Task ExtractSevenZipAsync(
+    private static async Task ExtractArchiveAsync(
         string archivePath,
         string extractPath,
         CancellationToken cancellationToken)
@@ -94,7 +122,13 @@ public class CommunityOutpostDeliverer(
         await Task.Run(
             () =>
             {
-                using var archive = SevenZipArchive.Open(archivePath);
+                var fileInfo = new FileInfo(archivePath);
+                if (!fileInfo.Exists || fileInfo.Length == 0)
+                {
+                    throw new FileNotFoundException($"Archive file not found or empty: {archivePath}");
+                }
+
+                using var archive = ArchiveFactory.Open(archivePath);
                 foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -126,7 +160,7 @@ public class CommunityOutpostDeliverer(
             return [];
         }
 
-        var manifestFiles = new List<ManifestFile>();
+        List<ManifestFile> manifestFiles = [];
 
         foreach (var file in files)
         {
@@ -264,14 +298,7 @@ public class CommunityOutpostDeliverer(
 
             try
             {
-                if (isSevenZip)
-                {
-                    await ExtractSevenZipAsync(archivePath, extractPath, cancellationToken);
-                }
-                else
-                {
-                    ZipFile.ExtractToDirectory(archivePath, extractPath, overwriteFiles: true);
-                }
+                await ExtractArchiveAsync(archivePath, extractPath, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -279,20 +306,20 @@ public class CommunityOutpostDeliverer(
                 return OperationResult<ContentManifest>.CreateFailure($"Extraction failed: {ex.Message}");
             }
 
-            // Step 2.5: Repack if needed (e.g. for Hotkeys)
+            // Step 2.5: Repack main content if needed (e.g. for Hotkeys)
             await RepackContentIfNeededAsync(
                 packageManifest,
                 extractPath,
                 cancellationToken);
 
-            // Step 2.6: Download and merge AutoInstall dependencies directly into extracted content
-            // This creates ONE manifest with ALL files - CAS will deduplicate automatically
-            await DownloadAndMergeDependenciesSimpleAsync(
+            // Step 2.6: Process AutoInstall dependencies and add their BIG files
+            // MUST happen AFTER repacking because repacking clears the extract directory
+            await ProcessAndMergeDependencyBigFilesAsync(
                 packageManifest,
                 extractPath,
                 cancellationToken);
 
-            // Step 3: Create manifests using the factory (now includes merged dependency files)
+            // Step 3: Create manifests using the factory
             progress?.Report(new ContentAcquisitionProgress
             {
                 Phase = ContentAcquisitionPhase.Copying,
@@ -503,6 +530,29 @@ public class CommunityOutpostDeliverer(
 
         if (metadata.RequiresRepacking && !string.IsNullOrEmpty(metadata.OutputFilename))
         {
+            // Variant-based output filenames (e.g., 340_ControlBarPro{variant}ZH.big)
+            // must be handled later when a specific variant is selected.
+            if (metadata.OutputFilename.Contains("{variant}", StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogDebug(
+                    "Skipping repack at delivery stage for {ContentCode} because output filename is variant-based: {OutputFilename}",
+                    contentCode,
+                    metadata.OutputFilename);
+                return;
+            }
+
+            // If a correctly named BIG file already exists in the extracted content, do not repack.
+            var existingBig = Directory.GetFiles(extractPath, metadata.OutputFilename, SearchOption.AllDirectories)
+                .FirstOrDefault();
+            if (!string.IsNullOrEmpty(existingBig))
+            {
+                logger.LogInformation(
+                    "Skipping repack for {ContentCode} because {OutputFilename} already exists in extracted content",
+                    contentCode,
+                    metadata.OutputFilename);
+                return;
+            }
+
             logger.LogInformation(
                 "Repacking content for {ContentCode} into {OutputFilename}",
                 contentCode,
@@ -559,12 +609,35 @@ public class CommunityOutpostDeliverer(
 
             // Clear the ExtractPath and move the packed file there
             // This ensures the manifest factory only sees the packed file
-            Directory.Delete(extractPath, true);
-            Directory.CreateDirectory(extractPath);
+            try
+            {
+                if (Directory.Exists(extractPath))
+                {
+                    Directory.Delete(extractPath, true);
+                }
+
+                Directory.CreateDirectory(extractPath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to reset extract path {ExtractPath} during repacking", extractPath);
+                throw new IOException($"Failed to prepare extraction directory: {ex.Message}", ex);
+            }
+
             File.Move(destinationPath, Path.Combine(extractPath, metadata.OutputFilename));
 
             // Cleanup packDir
-            Directory.Delete(packDir, true);
+            try
+            {
+                if (Directory.Exists(packDir))
+                {
+                    Directory.Delete(packDir, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to cleanup temporary pack directory {PackDir}", packDir);
+            }
 
             logger.LogInformation("Repacking completed successfully");
         }
@@ -610,13 +683,18 @@ public class CommunityOutpostDeliverer(
                     var casPoolPath = Path.Combine(installationPath, ".genhub-cas");
                     logger.LogInformation("Auto-setting InstallationPoolRootPath to single installation: {Path}", casPoolPath);
 
-                    await userSettingsService.TryUpdateAndSaveAsync(s =>
+                    var saved = await userSettingsService.TryUpdateAndSaveAsync(s =>
                     {
                         s.CasConfiguration.InstallationPoolRootPath = casPoolPath;
                         s.PreferredStorageInstallationId = installation.Id;
                         s.MarkAsExplicitlySet(nameof(s.CasConfiguration.InstallationPoolRootPath));
                         return true;
                     });
+
+                    if (!saved)
+                    {
+                        logger.LogError("Failed to save installation pool path settings for installation {InstallationId}", installation.Id);
+                    }
 
                     // Verify the setting was applied
                     var updatedSettings = userSettingsService.Get();
@@ -663,25 +741,37 @@ public class CommunityOutpostDeliverer(
     }
 
     /// <summary>
-    /// SIMPLE APPROACH: Downloads and merges AutoInstall dependencies into the main package directory.
-    /// Just extract each dependency and copy all files. CAS handles deduplication.
+    /// Processes AutoInstall dependencies by downloading, repacking them, and copying their BIG files
+    /// into the main extract path so they become part of the same manifest.
     /// </summary>
-    private async Task DownloadAndMergeDependenciesSimpleAsync(
+    private async Task ProcessAndMergeDependencyBigFilesAsync(
         ContentManifest packageManifest,
         string extractPath,
         CancellationToken cancellationToken)
     {
-        var autoInstallDeps = packageManifest.Dependencies
+        var packageContentCode = GetContentCodeFromManifest(packageManifest);
+        var packageMetadata = GenPatcherContentRegistry.GetMetadata(packageContentCode);
+        var hasControlBarProBigs = false;
+
+        if (packageMetadata.Category == GenPatcherContentCategory.ControlBar && packageMetadata.SupportsVariants)
+        {
+            hasControlBarProBigs = Directory.GetFiles(extractPath, "*ControlBarPro*ZH.big", SearchOption.AllDirectories)
+                .Any(path => !Path.GetFileName(path).Contains("Core", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var autoInstallDeps = (packageManifest.Dependencies ?? Enumerable.Empty<ContentDependency>())
             .Where(d => d.InstallBehavior == DependencyInstallBehavior.AutoInstall)
             .ToList();
 
         if (autoInstallDeps.Count == 0)
         {
-            logger.LogDebug("No auto-install dependencies to merge");
+            logger.LogDebug("No auto-install dependencies to process");
             return;
         }
 
-        logger.LogInformation("Merging {Count} auto-install dependencies into package", autoInstallDeps.Count);
+        logger.LogInformation(
+            "Processing {Count} auto-install dependencies - their BIG files will be added to the main manifest",
+            autoInstallDeps.Count);
 
         foreach (var dep in autoInstallDeps)
         {
@@ -689,7 +779,7 @@ public class CommunityOutpostDeliverer(
 
             try
             {
-                // Extract content code from manifest ID (e.g., "1.10.communityoutpost.addon.hlenenglish" → "hlenenglish")
+                // Extract content code from manifest ID
                 var manifestIdStr = dep.Id.Value;
                 var lastDotIndex = manifestIdStr.LastIndexOf('.');
                 if (lastDotIndex < 0)
@@ -698,68 +788,121 @@ public class CommunityOutpostDeliverer(
                     continue;
                 }
 
-                var depContentCode = manifestIdStr.Substring(lastDotIndex + 1);
-                
-                // CRITICAL: Look up in registry to get the actual content code
-                // The manifest ID might have language suffixes (e.g., "hlenenglish")  
-                // but the actual file and registry use the base code (e.g., "hlen")
-                var depMetadata = GenPatcherContentRegistry.GetMetadata(depContentCode);
-                var actualContentCode = depMetadata.ContentCode ?? depContentCode;
-                
-                logger.LogInformation("Downloading and merging: {Name} (manifest code: {ManifestCode}, actual code: {ActualCode})", 
-                    dep.Name, depContentCode, actualContentCode);
+                var depContentCode = manifestIdStr[(lastDotIndex + 1)..];
 
-                // Download from https://legi.cc/patch/{actualCode}.dat (use actual content code!)
-                var depUrl = $"https://legi.cc/patch/{actualContentCode}.dat";
-                var tempDir = Path.Combine(Path.GetTempPath(), "GenHub", "DepMerge");
-                var depArchive = Path.Combine(tempDir, $"{actualContentCode}.dat");
-                Directory.CreateDirectory(tempDir);
+                // Look up in registry to get metadata
+                var (actualContentCode, depMetadata) = NormalizeContentCode(depContentCode);
 
-                var downloadResult = await DownloadWithMirrorFallbackAsync(depUrl, depArchive, cancellationToken);
-                if (!downloadResult.Success)
+                logger.LogInformation(
+                    "Processing dependency: {Name} (code: {Code}) - will add its BIG file to main manifest",
+                    dep.Name ?? dep.Id.Value,
+                    actualContentCode);
+
+                if (hasControlBarProBigs &&
+                    packageMetadata.Category == GenPatcherContentCategory.ControlBar &&
+                    (string.Equals(depMetadata.OutputFilename, "400_ControlBarProCoreZH.big", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(depMetadata.OutputFilename, "400_ControlBarHDBaseZH.big", StringComparison.OrdinalIgnoreCase)))
                 {
-                    logger.LogError("Failed to download {Name} from {Url}: {Error}", dep.Name, depUrl, downloadResult.FirstError);
+                    logger.LogInformation(
+                        "Skipping dependency {Name} because Control Bar Pro BIGs already exist in extracted content",
+                        dep.Name ?? dep.Id.Value);
                     continue;
                 }
 
-                // Extract to temp directory
+                // Download dependency archive
+                var urlsToTry = new List<string>
+                {
+                    $"https://legi.cc/gp2/f/{actualContentCode}.dat",
+                    $"https://legi.cc/patch/{actualContentCode}.dat",
+                };
+
+                var uniqueId = Guid.NewGuid().ToString("N");
+                var tempDir = Path.Combine(Path.GetTempPath(), "GenHub", "DepBigFiles", uniqueId);
+                var depArchive = Path.Combine(tempDir, $"{actualContentCode}.dat");
+                Directory.CreateDirectory(tempDir);
+
+                OperationResult<bool> downloadResult = OperationResult<bool>.CreateFailure("No URLs attempted");
+                foreach (var depUrl in urlsToTry)
+                {
+                    logger.LogDebug("Trying dependency download from {Url}", depUrl);
+                    downloadResult = await DownloadWithMirrorFallbackAsync(depUrl, depArchive, cancellationToken);
+                    if (downloadResult.Success) break;
+                }
+
+                if (!downloadResult.Success)
+                {
+                    logger.LogError("Failed to download dependency {Name}: {Error}", dep.Name, downloadResult.FirstError);
+                    continue;
+                }
+
+                // Extract dependency
                 var depExtractPath = Path.Combine(tempDir, actualContentCode);
+                if (Directory.Exists(depExtractPath))
+                {
+                    Directory.Delete(depExtractPath, recursive: true);
+                }
+
                 Directory.CreateDirectory(depExtractPath);
-                await ExtractSevenZipAsync(depArchive, depExtractPath, cancellationToken);
+                await ExtractArchiveAsync(depArchive, depExtractPath, cancellationToken);
 
                 // Convert AVIF to TGA
                 await avifConverter.ConvertDirectoryAsync(depExtractPath, cancellationToken);
 
-                // Copy ALL files into main extractPath
-                var depFiles = Directory.GetFiles(depExtractPath, "*", SearchOption.AllDirectories);
-                logger.LogInformation("Copying {FileCount} files from {Name}", depFiles.Length, dep.Name);
-
-                foreach (var sourceFile in depFiles)
+                // Create a temporary package manifest for repacking
+                var depPackageManifest = new ContentManifest
                 {
-                    var relativePath = Path.GetRelativePath(depExtractPath, sourceFile);
-                    var targetFile = Path.Combine(extractPath, relativePath);
-                    Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
-                    File.Copy(sourceFile, targetFile, overwrite: true);
+                    Id = dep.Id,
+                    Name = dep.Name ?? depMetadata.DisplayName,
+                    Version = "1.0",
+                    ContentType = depMetadata.ContentType,
+                    TargetGame = depMetadata.TargetGame,
+                    Metadata = new ContentMetadata
+                    {
+                        Tags = [$"contentCode:{actualContentCode}"],
+                    },
+                };
+
+                // Repack if needed (this creates the BIG file)
+                await RepackContentIfNeededAsync(depPackageManifest, depExtractPath, cancellationToken);
+
+                // Copy the resulting BIG file(s) to the main extractPath
+                var bigFiles = Directory.GetFiles(depExtractPath, "*.big", SearchOption.AllDirectories);
+                if (bigFiles.Length == 0)
+                {
+                    logger.LogWarning("No BIG files found for dependency {Name} after repacking", dep.Name);
+                }
+                else
+                {
+                    foreach (var bigFile in bigFiles)
+                    {
+                        var bigFileName = Path.GetFileName(bigFile);
+                        var targetPath = Path.Combine(extractPath, bigFileName);
+                        File.Copy(bigFile, targetPath, overwrite: true);
+                        logger.LogInformation(
+                            "Copied dependency BIG file {FileName} to main extract path",
+                            bigFileName);
+                    }
                 }
 
                 // Cleanup
                 try
                 {
                     File.Delete(depArchive);
-                    Directory.Delete(depExtractPath, recursive: true);
+
+                    // Delete the unique temp directory and everything in it
+                    Directory.Delete(tempDir, recursive: true);
                 }
                 catch
                 {
-                    // Ignore
+                    // Ignore cleanup errors
                 }
-
-                logger.LogInformation("Successfully merged {Name}", dep.Name);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to merge dependency {Name}", dep.Name);
+                logger.LogError(ex, "Failed to process dependency {Name}", dep.Name);
             }
         }
 
-        logger.LogInformation("Finished merging dependencies into {Path}", extractPath);
-    }}
+        logger.LogInformation("Finished processing auto-install dependencies");
+    }
+}

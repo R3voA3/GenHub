@@ -249,6 +249,16 @@ public partial class GenPatcherDatCatalogParser(ILogger<GenPatcherDatCatalogPars
             // Get metadata from GenPatcherContentRegistry
             var metadata = GenPatcherContentRegistry.GetMetadata(item.ContentCode);
 
+            // Filter out unwanted content: official patches and unknown content types
+            // These should not be presented as downloadable content to the user in the cards view
+            // UNLESS it's an OfficialPatch (which we filter later by language)
+            if ((metadata.ContentType == ContentType.Patch && metadata.Category != GenPatcherContentCategory.OfficialPatch) ||
+                metadata.ContentType == ContentType.UnknownContentType)
+            {
+                _logger.LogDebug("Filtering out content {Code} - restricted content type {Type}", item.ContentCode, metadata.ContentType);
+                return null;
+            }
+
             // Skip base dependencies (e.g., cbbs, cben, cbpc, hlen) - these are auto-installed when needed
             // and showing them in the UI only confuses users
             if (metadata.IsBaseDependency)
@@ -265,14 +275,6 @@ public partial class GenPatcherDatCatalogParser(ILogger<GenPatcherDatCatalogPars
                 return null;
             }
 
-            // Skip base dependencies (e.g., cbbs, cben, cbpc, hlen) - these are auto-installed when needed
-            // and showing them in the UI only confuses users
-            if (metadata.IsBaseDependency)
-            {
-                _logger.LogDebug("Skipping base dependency {Code} ({Name}) - auto-installed as dependency", item.ContentCode, metadata.DisplayName);
-                return null;
-            }
-
             // Get download URL with mirror preference from provider
             var preferredUrl = GetPreferredDownloadUrl(item, provider);
             if (string.IsNullOrEmpty(preferredUrl))
@@ -286,11 +288,11 @@ public partial class GenPatcherDatCatalogParser(ILogger<GenPatcherDatCatalogPars
             preferredUrl = MakeUrlAbsolute(preferredUrl, baseUrl);
 
             // Use the standard 5-segment ID format: schema.user.publisher.type.name
-            var publisherName = provider.PublisherType;
+            var publisherName = provider.PublisherType.ToLowerInvariant();
             var contentType = metadata.ContentType.ToString().ToLowerInvariant();
             var result = new ContentSearchResult
             {
-                Id = $"1.0.{publisherName}.{contentType}.{item.ContentCode}",
+                Id = $"1.0.{publisherName}.{contentType}.{item.ContentCode.ToLowerInvariant()}",
                 Name = metadata.DisplayName,
                 Description = metadata.Description ?? string.Empty,
                 Version = metadata.Version ?? CommunityOutpostCatalogConstants.DefaultMetadataVersion,

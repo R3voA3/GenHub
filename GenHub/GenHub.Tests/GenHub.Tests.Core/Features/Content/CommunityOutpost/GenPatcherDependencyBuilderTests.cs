@@ -176,6 +176,25 @@ public class GenPatcherDependencyBuilderTests
     }
 
     /// <summary>
+    /// Verifies that Leikeze's and Legionnaire's hotkeys require the indicators pack (hlen).
+    /// </summary>
+    /// <param name="contentCode">The hotkey content code.</param>
+    [Theory]
+    [InlineData("hlei")]
+    [InlineData("hleg")]
+    public void GetDependencies_Hotkeys_RequiresIndicatorsPack(string contentCode)
+    {
+        // Arrange
+        var metadata = GenPatcherContentRegistry.GetMetadata(contentCode);
+
+        // Act
+        var dependencies = GenPatcherDependencyBuilder.GetDependencies(contentCode, metadata);
+
+        // Assert
+        Assert.Contains(dependencies, d => d.Id.Value.EndsWith(".hlen") && d.DependencyType == ContentType.Addon);
+    }
+
+    /// <summary>
     /// Verifies that control bars are marked as exclusive (conflict with each other).
     /// </summary>
     [Fact]
@@ -255,6 +274,7 @@ public class GenPatcherDependencyBuilderTests
         Assert.NotEmpty(conflicts);
         Assert.DoesNotContain("hleg", conflicts); // Should not conflict with itself
         Assert.Contains("hlde", conflicts);
+        Assert.Contains("hlei", conflicts);
         Assert.Contains("ewba", conflicts);
     }
 
@@ -331,7 +351,7 @@ public class GenPatcherDependencyBuilderTests
 
         // Assert
         Assert.Equal(ContentType.Addon, dependency.DependencyType);
-        Assert.Equal(DependencyInstallBehavior.AutoInstall, dependency.InstallBehavior);
+        Assert.Equal(DependencyInstallBehavior.RequireExisting, dependency.InstallBehavior);
         Assert.False(dependency.IsOptional);
 
         // ID format: 1.0.communityoutpost.addon.gent (using 4-char content code)

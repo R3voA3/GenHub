@@ -384,6 +384,31 @@ public partial class PublisherCardViewModel : ObservableObject, IRecipient<Profi
                         {
                             item.Model.Id = variant.Id.Value;
                         }
+
+                        // Populate resolution variants from the manifest metadata
+                        if (variant.Metadata?.Variants != null && variant.Metadata.Variants.Count > 0)
+                        {
+                            if (!item.ResolutionVariants.SequenceEqual(variant.Metadata.Variants))
+                            {
+                                item.ResolutionVariants.Clear();
+                                foreach (var resVariant in variant.Metadata.Variants)
+                                {
+                                    item.ResolutionVariants.Add(resVariant);
+                                }
+                            }
+
+                            // Set default variant if not already selected (even if list already matched)
+                            if (string.IsNullOrEmpty(item.SelectedVariantId))
+                            {
+                                var defaultVariant = variant.Metadata.Variants.FirstOrDefault(v => v.IsDefault);
+                                item.SelectedVariantId = defaultVariant?.Id ?? variant.Metadata.Variants.FirstOrDefault()?.Id;
+                            }
+                        }
+                        else
+                        {
+                            item.ResolutionVariants.Clear();
+                            item.SelectedVariantId = null;
+                        }
                     }
 
                     // If we have multiple variants, we don't change the Model.Id arbitrarily

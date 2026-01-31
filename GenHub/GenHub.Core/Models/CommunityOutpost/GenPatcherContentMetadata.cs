@@ -97,4 +97,16 @@ public class GenPatcherContentMetadata
     /// and hidden from the user in the Downloads UI. Examples: cbbs (Control Bar HD Base), cben (Control Bar HD Language).
     /// </summary>
     public bool IsBaseDependency { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the available variants for this content.
+    /// Used for content that has multiple configurations (e.g., GenTool with different resolutions).
+    /// </summary>
+    public List<ContentVariant>? Variants { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this content supports variant-based installation.
+    /// If true, manifests can be generated for specific variants selected by the user.
+    /// </summary>
+    public bool SupportsVariants { get; set; } = false;
 }

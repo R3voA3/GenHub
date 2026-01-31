@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GenHub.Core.Models.Enums;
+using GenHub.Core.Models.Manifest;
 
 namespace GenHub.Core.Models.CommunityOutpost;
 
@@ -26,6 +27,18 @@ public static class GenPatcherContentRegistry
         ['s'] = ("es", "Spanish"),
         ['2'] = ("de-alt", "German (Alternate)"),
     };
+
+    /// <summary>
+    /// Shared resolution variants for high-resolution control bars.
+    /// </summary>
+    private static readonly List<ContentVariant> ResolutionVariants =
+    [
+        new ContentVariant { Id = "720p", Name = "720p", VariantType = "resolution", Value = "720", IncludePatterns = ["*720*"], ExcludePatterns = ["*900*", "*1080*", "*1440*", "*2160*"], IsDefault = false },
+        new ContentVariant { Id = "900p", Name = "900p", VariantType = "resolution", Value = "900", IncludePatterns = ["*900*"], ExcludePatterns = ["*720*", "*1080*", "*1440*", "*2160*"], IsDefault = false },
+        new ContentVariant { Id = "1080p", Name = "1080p (Recommended)", VariantType = "resolution", Value = "1080", IncludePatterns = ["*1080*"], ExcludePatterns = ["*720*", "*900*", "*1440*", "*2160*"], IsDefault = true },
+        new ContentVariant { Id = "1440p", Name = "1440p (2K)", VariantType = "resolution", Value = "1440", IncludePatterns = ["*1440*"], ExcludePatterns = ["*720*", "*900*", "*1080*", "*2160*"], IsDefault = false },
+        new ContentVariant { Id = "2160p", Name = "2160p (4K)", VariantType = "resolution", Value = "2160", IncludePatterns = ["*2160*"], ExcludePatterns = ["*720*", "*900*", "*1080*", "*1440*"], IsDefault = false },
+    ];
 
     /// <summary>
     /// Static content metadata for known content codes.
@@ -80,7 +93,7 @@ public static class GenPatcherContentRegistry
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
             RequiresRepacking = true,
-            OutputFilename = "!ControlBarHDBaseZH.big",
+            OutputFilename = "400_ControlBarHDBaseZH.big",
             IsBaseDependency = true,
         },
         ["cben"] = new GenPatcherContentMetadata
@@ -93,7 +106,7 @@ public static class GenPatcherContentRegistry
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
             RequiresRepacking = true,
-            OutputFilename = "!ControlBarHDLanguageZH.big",
+            OutputFilename = "400_ControlBarHDEnglishZH.big",
             IsBaseDependency = true,
         },
         ["cbpc"] = new GenPatcherContentMetadata
@@ -105,6 +118,8 @@ public static class GenPatcherContentRegistry
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "400_ControlBarProCoreZH.big",
             IsBaseDependency = true,
         },
         ["cbpr"] = new GenPatcherContentMetadata
@@ -116,6 +131,10 @@ public static class GenPatcherContentRegistry
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "340_ControlBarPro{variant}ZH.big",
+            SupportsVariants = true,
+            Variants = ResolutionVariants,
         },
         ["cbpx"] = new GenPatcherContentMetadata
         {
@@ -126,6 +145,10 @@ public static class GenPatcherContentRegistry
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "340_ControlBarPro{variant}ZH.big",
+            SupportsVariants = true,
+            Variants = ResolutionVariants,
         },
 
         // Camera Modifications
@@ -376,19 +399,21 @@ public static class GenPatcherContentRegistry
     /// <returns>Content metadata, or a dynamically generated one if the code is unknown.</returns>
     public static GenPatcherContentMetadata GetMetadata(string contentCode)
     {
-        if (string.IsNullOrEmpty(contentCode))
+        if (string.IsNullOrWhiteSpace(contentCode))
         {
-            return CreateUnknownMetadata(contentCode);
+            return CreateUnknownMetadata(contentCode ?? string.Empty);
         }
 
-        // Check for known content first
-        if (KnownContent.TryGetValue(contentCode.ToLowerInvariant(), out var metadata))
+        var normalizedCode = contentCode.Trim();
+
+        // Check for known content first (case-insensitive due to dictionary comparer)
+        if (KnownContent.TryGetValue(normalizedCode, out var metadata))
         {
             return metadata;
         }
 
         // Try to parse as a patch code (e.g., "108e", "104b")
-        var patchMetadata = TryParsePatchCode(contentCode);
+        var patchMetadata = TryParsePatchCode(normalizedCode);
         if (patchMetadata != null)
         {
             return patchMetadata;

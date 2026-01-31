@@ -46,17 +46,38 @@ public partial class WindowsFileOperationsService(
         => baseService.StoreInCasAsync(sourcePath, expectedHash, cancellationToken);
 
     /// <inheritdoc/>
-    public Task<bool> CopyFromCasAsync(string hash, string destinationPath, CancellationToken cancellationToken = default)
-        => baseService.CopyFromCasAsync(hash, destinationPath, cancellationToken);
+    public async Task<bool> CopyFromCasAsync(string hash, string destinationPath, ContentType? contentType = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var pathResult = contentType.HasValue
+                ? await casService.GetContentPathAsync(hash, contentType.Value, cancellationToken).ConfigureAwait(false)
+                : await casService.GetContentPathAsync(hash, cancellationToken).ConfigureAwait(false);
+
+            if (!pathResult.Success || pathResult.Data == null)
+            {
+                logger.LogError("CAS content not found for hash {Hash} for copy: {Error}", hash, pathResult.FirstError);
+                return false;
+            }
+
+            await CopyFileAsync(pathResult.Data, destinationPath, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to copy from CAS for hash {Hash} to {TargetPath}", hash, destinationPath);
+            return false;
+        }
+    }
 
     /// <inheritdoc/>
     public async Task<bool> LinkFromCasAsync(
         string hash,
         string destinationPath,
         bool useHardLink = false,
+        ContentType? contentType = null,
         CancellationToken cancellationToken = default)
     {
-        ContentType? contentType = null;
         try
         {
             var pathResult = contentType.HasValue
@@ -74,9 +95,9 @@ public partial class WindowsFileOperationsService(
             // For hard links, check if source and destination are on the same volume
             if (useHardLink)
             {
-                var sourceRoot = Path.GetPathRoot(casSourcePath);
-                var destRoot = Path.GetPathRoot(destinationPath);
-                var sameVolume = string.Equals(sourceRoot, destRoot, StringComparison.OrdinalIgnoreCase);
+                var sameVolume = FileOperationsService.AreSameVolume(casSourcePath, destinationPath);
+                var sourceRoot = sameVolume ? null : Path.GetPathRoot(casSourcePath);
+                var destRoot = sameVolume ? null : Path.GetPathRoot(destinationPath);
 
                 if (!sameVolume && contentType.HasValue)
                 {
@@ -110,7 +131,7 @@ public partial class WindowsFileOperationsService(
                 {
                     // No content type provided and volumes differ - hard link will fail
                     var errorMessage = $"Cannot create hard link across different volumes/drives: Source={casSourcePath} (volume {sourceRoot}), Destination={destinationPath} (volume {destRoot})";
-                    logger.LogError(errorMessage);
+                    // Exception will be caught and logged by the outer catch block
                     throw new IOException(errorMessage);
                 }
             }
@@ -124,7 +145,7 @@ public partial class WindowsFileOperationsService(
             }
             else
             {
-                await CreateSymlinkAsync(destinationPath, casSourcePath, !useHardLink, cancellationToken).ConfigureAwait(false);
+                await CreateSymlinkAsync(destinationPath, casSourcePath, allowFallback: true, cancellationToken).ConfigureAwait(false);
             }
 
             logger.LogDebug("Created {LinkType} from CAS hash {Hash} to {DestinationPath}", useHardLink ? "hard link" : "symlink", hash, destinationPath);
