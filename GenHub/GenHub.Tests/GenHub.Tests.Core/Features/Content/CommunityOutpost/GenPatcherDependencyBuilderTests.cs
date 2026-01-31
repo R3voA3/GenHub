@@ -234,14 +234,11 @@ public class GenPatcherDependencyBuilderTests
     public void GetConflictingCodes_ControlBar_ReturnsOtherControlBars()
     {
         // Act
-        var conflicts = GenPatcherDependencyBuilder.GetConflictingCodes("cbbs");
+        var conflicts = GenPatcherDependencyBuilder.GetConflictingCodes("cbpr");
 
         // Assert
         Assert.NotEmpty(conflicts);
-        Assert.DoesNotContain("cbbs", conflicts); // Should not conflict with itself
-        Assert.Contains("cben", conflicts);
-        Assert.Contains("cbpc", conflicts);
-        Assert.Contains("cbpr", conflicts);
+        Assert.DoesNotContain("cbpr", conflicts); // Should not conflict with itself
         Assert.Contains("cbpx", conflicts);
     }
 
@@ -252,11 +249,11 @@ public class GenPatcherDependencyBuilderTests
     public void GetConflictingCodes_Hotkeys_ReturnsOtherHotkeys()
     {
         // Act
-        var conflicts = GenPatcherDependencyBuilder.GetConflictingCodes("hlen");
+        var conflicts = GenPatcherDependencyBuilder.GetConflictingCodes("hleg");
 
         // Assert
         Assert.NotEmpty(conflicts);
-        Assert.DoesNotContain("hlen", conflicts); // Should not conflict with itself
+        Assert.DoesNotContain("hleg", conflicts); // Should not conflict with itself
         Assert.Contains("hlde", conflicts);
         Assert.Contains("ewba", conflicts);
     }

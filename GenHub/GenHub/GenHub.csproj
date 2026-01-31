@@ -45,6 +45,9 @@
         <PackageReference Include="Serilog.Extensions.Logging" />
         <PackageReference Include="SharpCompress" />
         <PackageReference Include="Slugify.Core" />
+        <PackageReference Include="SixLabors.ImageSharp" />
+        <PackageReference Include="HeyRed.ImageSharp.Heif" />
+        <PackageReference Include="LibHeif.Native" />
         <PackageReference Include="StyleCop.Analyzers" />
         <PackageReference Include="Velopack" />
     </ItemGroup>

@@ -146,6 +146,26 @@ public class CasService(
     {
         try
         {
+            // If pool manager is available, check all pools for the content
+            if (poolManager != null)
+            {
+                poolManager.EnsureAllPoolsInitialized();
+                var allStorages = poolManager.GetAllStorages();
+
+                foreach (var poolStorage in allStorages)
+                {
+                    if (await poolStorage.ObjectExistsAsync(hash, cancellationToken))
+                    {
+                        var path = poolStorage.GetObjectPath(hash);
+                        logger.LogDebug("Found content {Hash} in pool storage", hash);
+                        return OperationResult<string>.CreateSuccess(path);
+                    }
+                }
+
+                return OperationResult<string>.CreateFailure($"Content not found in any CAS pool: {hash}");
+            }
+
+            // No pool manager - use default storage only
             if (await storage.ObjectExistsAsync(hash, cancellationToken))
             {
                 var path = storage.GetObjectPath(hash);
@@ -524,6 +544,10 @@ public class CasService(
 
         try
         {
+            // Ensure all pools are properly initialized before checking
+            // This is important because the Installation Pool path may have been set after construction
+            poolManager.EnsureAllPoolsInitialized();
+
             var storage = poolManager.GetStorage(contentType);
 
             if (await storage.ObjectExistsAsync(hash, cancellationToken))
@@ -532,7 +556,17 @@ public class CasService(
                 return OperationResult<string>.CreateSuccess(path);
             }
 
-            return OperationResult<string>.CreateFailure($"Content not found in CAS pool ({contentType}): {hash}");
+            // Not found in the expected pool, try primary pool as fallback
+            logger.LogDebug("Content {Hash} not found in {ContentType} pool, checking primary pool as fallback", hash, contentType);
+            var primaryStorage = poolManager.GetStorage(CasPoolType.Primary);
+            if (await primaryStorage.ObjectExistsAsync(hash, cancellationToken))
+            {
+                var path = primaryStorage.GetObjectPath(hash);
+                logger.LogInformation("Found content {Hash} in primary pool (expected in {ContentType} pool)", hash, contentType);
+                return OperationResult<string>.CreateSuccess(path);
+            }
+
+            return OperationResult<string>.CreateFailure($"Content not found in CAS: {hash}");
         }
         catch (Exception ex)
         {
@@ -555,8 +589,27 @@ public class CasService(
 
         try
         {
+            // Ensure all pools are properly initialized before checking
+            // This is important because the Installation Pool path may have been set after construction
+            poolManager.EnsureAllPoolsInitialized();
+
             var storage = poolManager.GetStorage(contentType);
             var exists = await storage.ObjectExistsAsync(hash, cancellationToken);
+
+            if (!exists)
+            {
+                // Not found in the pool for this content type
+                // As a fallback, check if it exists in the primary pool (may have been stored there before pool routing was implemented)
+                logger.LogDebug("Content {Hash} not found in {ContentType} pool, checking primary pool as fallback", hash, contentType);
+                var primaryStorage = poolManager.GetStorage(CasPoolType.Primary);
+                exists = await primaryStorage.ObjectExistsAsync(hash, cancellationToken);
+
+                if (exists)
+                {
+                    logger.LogInformation("Found content {Hash} in primary pool (expected in {ContentType} pool)", hash, contentType);
+                }
+            }
+
             return OperationResult<bool>.CreateSuccess(exists);
         }
         catch (Exception ex)

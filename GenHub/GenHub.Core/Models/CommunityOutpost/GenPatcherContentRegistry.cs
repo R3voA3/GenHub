@@ -73,38 +73,45 @@ public static class GenPatcherContentRegistry
         ["cbbs"] = new GenPatcherContentMetadata
         {
             ContentCode = "cbbs",
-            DisplayName = "Control Bar - Basic",
-            Description = "Basic control bar addon",
+            DisplayName = "Control Bar HD (Base)",
+            Description = "High resolution UI textures for the control bar. Required for all HD and Pro control bars.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!ControlBarHDBaseZH.big",
+            IsBaseDependency = true,
         },
         ["cben"] = new GenPatcherContentMetadata
         {
             ContentCode = "cben",
-            DisplayName = "Control Bar - Enhanced",
-            Description = "Enhanced control bar with additional features",
+            DisplayName = "Control Bar HD (Language)",
+            Description = "Language-specific UI strings and tooltips for the HD control bar.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!ControlBarHDLanguageZH.big",
+            IsBaseDependency = true,
         },
         ["cbpc"] = new GenPatcherContentMetadata
         {
             ContentCode = "cbpc",
-            DisplayName = "Control Bar - PC Style",
-            Description = "PC-style control bar layout",
+            DisplayName = "Control Bar Pro (Core)",
+            Description = "Core files required for Pro ExiLe and Pro Xezon control bars.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
             InstallTarget = ContentInstallTarget.Workspace,
+            IsBaseDependency = true,
         },
         ["cbpr"] = new GenPatcherContentMetadata
         {
             ContentCode = "cbpr",
-            DisplayName = "Control Bar - Pro",
-            Description = "Professional control bar addon",
+            DisplayName = "Control Bar Pro (ExiLe)",
+            Description = "Created by ExiLe. High transparency, modern look, widescreen compatible. Requires GenTool.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
@@ -113,8 +120,8 @@ public static class GenPatcherContentRegistry
         ["cbpx"] = new GenPatcherContentMetadata
         {
             ContentCode = "cbpx",
-            DisplayName = "Control Bar - Extended",
-            Description = "Extended control bar with extra functionality",
+            DisplayName = "Control Bar Pro (Xezon)",
+            Description = "Created by FAS & xezon. Modern, compact layout, widescreen compatible. Requires GenTool.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.ControlBar,
@@ -157,66 +164,79 @@ public static class GenPatcherContentRegistry
         ["ewba"] = new GenPatcherContentMetadata
         {
             ContentCode = "ewba",
-            DisplayName = "Easy Win Hotkeys - Advanced",
-            Description = "Advanced hotkey configuration",
+            DisplayName = "Easy Win Hotkeys (Advanced)",
+            Description = "Advanced hotkey configuration for competitive play.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!HotkeysEasyWinAdvancedZH.big",
         },
         ["ewbi"] = new GenPatcherContentMetadata
         {
             ContentCode = "ewbi",
-            DisplayName = "Easy Win Hotkeys - International",
-            Description = "International hotkey layout",
+            DisplayName = "Easy Win Hotkeys (International)",
+            Description = "Standard hotkey layout optimized for non-English keyboards.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!HotkeysEasyWinInternationalZH.big",
         },
         ["hlde"] = new GenPatcherContentMetadata
         {
             ContentCode = "hlde",
-            DisplayName = "Hotkeys - German",
-            Description = "German hotkey configuration",
+            DisplayName = "Standard Hotkeys (German)",
+            Description = "German hotkey configuration for Zero Hour.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             LanguageCode = "de",
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!HotkeysGermanZH.big",
         },
         ["hleg"] = new GenPatcherContentMetadata
         {
             ContentCode = "hleg",
-            DisplayName = "Hotkeys - English (Grid)",
-            Description = "English grid-based hotkey layout",
+            DisplayName = "Legionnaire's Hotkeys",
+            Description = "A grid-based hotkey layout (QWERTY) that is easy to learn for modern RTS players.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             LanguageCode = "en",
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!HotkeysLegionnaireZH.big",
         },
         ["hlei"] = new GenPatcherContentMetadata
         {
             ContentCode = "hlei",
-            DisplayName = "Hotkeys - English (Icons)",
-            Description = "English icon-based hotkey layout",
+            DisplayName = "Leikeze's Hotkeys",
+            Description = "Highly recommended hotkey preset. Balanced for efficiency and ease of use.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             LanguageCode = "en",
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!HotkeysLeikezeZH.big",
         },
         ["hlen"] = new GenPatcherContentMetadata
         {
             ContentCode = "hlen",
-            DisplayName = "Hotkeys - English",
-            Description = "Standard English hotkey configuration",
+            DisplayName = "Hotkeys Indicators (Leikeze/Legionnaire)",
+            Description = "Control bar overlay icons for Leikeze's and Legionnaire's hotkeys.",
             ContentType = ContentType.Addon,
             TargetGame = GameType.ZeroHour,
             LanguageCode = "en",
             Category = GenPatcherContentCategory.Hotkeys,
             InstallTarget = ContentInstallTarget.Workspace,
+            RequiresRepacking = true,
+            OutputFilename = "!HotkeysLeikezeIndicatorsZH.big",
+            IsBaseDependency = true,
         },
 
         // Tools
@@ -230,16 +250,7 @@ public static class GenPatcherContentRegistry
             Category = GenPatcherContentCategory.Tools,
             InstallTarget = ContentInstallTarget.Workspace,
         },
-        ["genl"] = new GenPatcherContentMetadata
-        {
-            ContentCode = "genl",
-            DisplayName = "GenLauncher",
-            Description = "Alternative launcher for Generals/Zero Hour",
-            ContentType = ContentType.Addon,
-            TargetGame = GameType.ZeroHour,
-            Category = GenPatcherContentCategory.Tools,
-            InstallTarget = ContentInstallTarget.Workspace,
-        },
+
         ["gena"] = new GenPatcherContentMetadata
         {
             ContentCode = "gena",
@@ -250,58 +261,47 @@ public static class GenPatcherContentRegistry
             Category = GenPatcherContentCategory.Tools,
             InstallTarget = ContentInstallTarget.Workspace,
         },
-        ["laun"] = new GenPatcherContentMetadata
-        {
-            ContentCode = "laun",
-            DisplayName = "Launcher",
-            Description = "Game launcher component",
-            ContentType = ContentType.Addon,
-            TargetGame = GameType.ZeroHour,
-            Category = GenPatcherContentCategory.Tools,
-            InstallTarget = ContentInstallTarget.Workspace,
-        },
 
-        // Maps and Missions - These go to user Documents directory
+        // Maps
         ["maod"] = new GenPatcherContentMetadata
         {
             ContentCode = "maod",
-            DisplayName = "Map Addon",
-            Description = "Additional maps addon pack",
+            DisplayName = "Maps (Art of Defense)",
+            Description = "AOD is Art of Defense, similar to Tower Defense, but for Zero Hour. Includes popular maps like Demilitarized Zone, Extreme Circle, and Super V.",
             ContentType = ContentType.MapPack,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Maps,
-            InstallTarget = ContentInstallTarget.UserMapsDirectory,
+            InstallTarget = ContentInstallTarget.Workspace,
         },
         ["mmis"] = new GenPatcherContentMetadata
         {
             ContentCode = "mmis",
-            DisplayName = "Missions Pack",
-            Description = "Custom missions pack",
+            DisplayName = "Custom Missions Pack",
+            Description = "Single player and multiplayer co-op missions. Includes Operation Kihill Beach, Iranian Counterstrike, TKLyo's USA Campaign, and more.",
             ContentType = ContentType.Mission,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Maps,
-            InstallTarget = ContentInstallTarget.UserMapsDirectory,
+            InstallTarget = ContentInstallTarget.Workspace,
         },
         ["mscr"] = new GenPatcherContentMetadata
         {
             ContentCode = "mscr",
-            DisplayName = "Map Scripts",
-            Description = "Map scripting resources",
+            DisplayName = "Map Scripting Resources",
+            Description = "Special modded (scripted) and no-money maps like Battle Royale and Rebel Uprise. Note: Most do not work with AI.",
             ContentType = ContentType.MapPack,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Maps,
-            InstallTarget = ContentInstallTarget.UserMapsDirectory,
+            InstallTarget = ContentInstallTarget.Workspace,
         },
         ["mskr"] = new GenPatcherContentMetadata
         {
             ContentCode = "mskr",
-            DisplayName = "Map Pack - Korean",
-            Description = "Korean map pack",
+            DisplayName = "Skirmish Map Pack",
+            Description = "High quality 1v1, 2v2, 3v3, 4v4 and FFA maps. Includes World Builder Contest maps, Combat-Island, Defcon 51, and more.",
             ContentType = ContentType.MapPack,
             TargetGame = GameType.ZeroHour,
-            LanguageCode = "ko",
             Category = GenPatcherContentCategory.Maps,
-            InstallTarget = ContentInstallTarget.UserMapsDirectory,
+            InstallTarget = ContentInstallTarget.Workspace,
         },
 
         // Visuals
@@ -342,7 +342,7 @@ public static class GenPatcherContentRegistry
             ContentCode = "vc05",
             DisplayName = "VC++ 2005 Redistributable",
             Description = "Microsoft Visual C++ 2005 Redistributable (x86)",
-            ContentType = ContentType.Addon,
+            ContentType = ContentType.Executable,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Prerequisites,
             InstallTarget = ContentInstallTarget.System,
@@ -352,7 +352,7 @@ public static class GenPatcherContentRegistry
             ContentCode = "vc08",
             DisplayName = "VC++ 2008 Redistributable",
             Description = "Microsoft Visual C++ 2008 Redistributable (x86)",
-            ContentType = ContentType.Addon,
+            ContentType = ContentType.Executable,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Prerequisites,
             InstallTarget = ContentInstallTarget.System,
@@ -362,7 +362,7 @@ public static class GenPatcherContentRegistry
             ContentCode = "vc10",
             DisplayName = "VC++ 2010 Redistributable",
             Description = "Microsoft Visual C++ 2010 Redistributable (x86)",
-            ContentType = ContentType.Addon,
+            ContentType = ContentType.Executable,
             TargetGame = GameType.ZeroHour,
             Category = GenPatcherContentCategory.Prerequisites,
             InstallTarget = ContentInstallTarget.System,
@@ -451,7 +451,6 @@ public static class GenPatcherContentRegistry
         // Determine target game based on version
         // 108 = Generals 1.08, 104 = Zero Hour 1.04
         var isGenerals = versionNumber == 8; // 1.08 is Generals
-        var isZeroHour = versionNumber == 4; // 1.04 is Zero Hour
 
         var targetGame = isGenerals ? GameType.Generals : GameType.ZeroHour;
         var version = $"1.0{versionNumber}";

@@ -261,8 +261,10 @@ public class CommunityOutpostManifestFactory(
                 TargetGame = originalManifest.TargetGame,
                 Files = fileEntries,
 
-                // Always use the dependency builder to ensure correct dependencies (e.g., GameInstallation for Community Patch)
-                Dependencies = contentMetadata.GetDependencies(),
+                // Remove auto-install dependencies from the list since they're bundled into the files
+                Dependencies = contentMetadata.GetDependencies()
+                    .Where(d => d.InstallBehavior != DependencyInstallBehavior.AutoInstall)
+                    .ToList(),
                 InstallationInstructions = originalManifest.InstallationInstructions ?? new InstallationInstructions(),
                 Publisher = originalManifest.Publisher,
                 Metadata = new ContentMetadata

@@ -176,6 +176,7 @@ public static class GenPatcherDependencyBuilder
     /// <summary>
     /// Creates a dependency on the GenTool addon.
     /// GenTool is required for many advanced features.
+    /// Uses RequireExisting behavior so users see a warning badge and must explicitly download it first.
     /// </summary>
     /// <returns>A content dependency for GenTool.</returns>
     public static ContentDependency CreateGenToolDependency()
@@ -183,9 +184,9 @@ public static class GenPatcherDependencyBuilder
         return new ContentDependency
         {
             Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.gent"),
-            Name = "GenTool (Required)",
+            Name = "GenTool",
             DependencyType = ContentType.Addon,
-            InstallBehavior = DependencyInstallBehavior.AutoInstall,
+            InstallBehavior = DependencyInstallBehavior.RequireExisting,
             IsOptional = false,
         };
     }
@@ -207,6 +208,57 @@ public static class GenPatcherDependencyBuilder
     }
 
     /// <summary>
+    /// Creates a dependency on the Control Bar HD Base (cbbs).
+    /// Required for all HD and Pro control bar variants.
+    /// </summary>
+    /// <returns>A content dependency for Control Bar Base.</returns>
+    public static ContentDependency CreateControlBarBaseDependency()
+    {
+        return new ContentDependency
+        {
+            Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.cbbs"),
+            Name = "Control Bar HD Base (Required)",
+            DependencyType = ContentType.Addon,
+            InstallBehavior = DependencyInstallBehavior.AutoInstall,
+            IsOptional = false,
+        };
+    }
+
+    /// <summary>
+    /// Creates a dependency on the Control Bar HD Language (cben).
+    /// Provides language-specific UI strings for control bars.
+    /// </summary>
+    /// <returns>A content dependency for Control Bar Language.</returns>
+    public static ContentDependency CreateControlBarLanguageDependency()
+    {
+        return new ContentDependency
+        {
+            Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.cben"),
+            Name = "Control Bar HD Language (Required)",
+            DependencyType = ContentType.Addon,
+            InstallBehavior = DependencyInstallBehavior.AutoInstall,
+            IsOptional = false,
+        };
+    }
+
+    /// <summary>
+    /// Creates a dependency on the Control Bar Pro Core (cbpc).
+    /// Required for ExiLe and Xezon Pro variants.
+    /// </summary>
+    /// <returns>A content dependency for Control Bar Pro Core.</returns>
+    public static ContentDependency CreateControlBarProCoreDependency()
+    {
+        return new ContentDependency
+        {
+            Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.cbpc"),
+            Name = "Control Bar Pro Core (Required)",
+            DependencyType = ContentType.Addon,
+            InstallBehavior = DependencyInstallBehavior.AutoInstall,
+            IsOptional = false,
+        };
+    }
+
+    /// <summary>
     /// Gets a list of content codes that conflict with each other.
     /// For example, control bars conflict with other control bars.
     /// </summary>
@@ -216,13 +268,23 @@ public static class GenPatcherDependencyBuilder
     {
         var metadata = GenPatcherContentRegistry.GetMetadata(contentCode);
 
+        // Base dependencies should never conflict with user-selectable items
+        if (metadata.IsBaseDependency)
+        {
+            return [];
+        }
+
+        bool IsNonBaseDependency(string code) => !GenPatcherContentRegistry.GetMetadata(code).IsBaseDependency;
+
         return metadata.Category switch
         {
             // Control bars conflict with each other
+            // NOTE: cbbs (Base) and cben (Language) are dependencies, not variants - they don't conflict
+            // Only the actual control bar variants (Pro ExiLe, Pro Xezon) conflict
             GenPatcherContentCategory.ControlBar => new List<string>
             {
-                "cbbs", "cben", "cbpc", "cbpr", "cbpx",
-            }.FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase)),
+                "cbpr", "cbpx",
+            }.FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase) && IsNonBaseDependency(c)),
 
             // Camera mods for the same game conflict
             GenPatcherContentCategory.Camera when metadata.TargetGame == GameType.ZeroHour =>
@@ -236,8 +298,8 @@ public static class GenPatcherDependencyBuilder
             // Hotkey configs might conflict
             GenPatcherContentCategory.Hotkeys => new List<string>
             {
-                "ewba", "ewbi", "hlde", "hleg", "hlei", "hlen",
-            }.FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase)),
+                "ewba", "ewbi", "hlde", "hleg", "hlei",
+            }.FindAll(c => !c.Equals(contentCode, StringComparison.OrdinalIgnoreCase) && IsNonBaseDependency(c)),
 
             _ => [],
         };
@@ -292,8 +354,37 @@ public static class GenPatcherDependencyBuilder
         // Control bars benefit from GenTool for better UI integration
         dependencies.Add(CreateOptionalGenToolDependency());
 
+        // Specific control bar dependencies based on content code
+        var code = metadata.ContentCode.ToLowerInvariant();
+
+        // cbpr and cbpx require both cbbs (HD Base) and cbpc (Pro Core)
+        if (code == "cbpr" || code == "cbpx")
+        {
+            dependencies.Add(CreateControlBarBaseDependency());
+            dependencies.Add(CreateControlBarProCoreDependency());
+
+            // Pro variants require GenTool
+            dependencies.Add(CreateGenToolDependency());
+
+            // Also require language pack
+            dependencies.Add(CreateControlBarLanguageDependency());
+        }
+
+        // cbpc requires cbbs (HD Base)
+        else if (code == "cbpc")
+        {
+            dependencies.Add(CreateControlBarBaseDependency());
+            dependencies.Add(CreateControlBarLanguageDependency());
+        }
+
+        // cben requires cbbs (HD Base)
+        else if (code == "cben")
+        {
+            dependencies.Add(CreateControlBarBaseDependency());
+        }
+
         // Control bars conflict with each other (only one can be active)
-        // Note: This is handled via IsExclusive flag
+        // Note: This is handled via IsExclusive flag and GetConflictingCodes()
     }
 
     /// <summary>
@@ -325,6 +416,20 @@ public static class GenPatcherDependencyBuilder
     {
         // Hotkeys typically work with Zero Hour
         dependencies.Add(CreateZeroHour104Dependency());
+
+        // Leikeze's and Legionnaire's Hotkeys require the control bar indicators pack (same indicators for both)
+        if (metadata.ContentCode.Equals("hlei", StringComparison.OrdinalIgnoreCase) ||
+            metadata.ContentCode.Equals("hleg", StringComparison.OrdinalIgnoreCase))
+        {
+            dependencies.Add(new ContentDependency
+            {
+                Id = ManifestId.Create($"1.{ManifestConstants.DefaultManifestVersion}.{CommunityOutpostConstants.PublisherType}.addon.hlenenglish"),
+                Name = "Leikeze/Legionnaire Hotkeys Indicators (provides visual overlay icons)",
+                DependencyType = ContentType.Addon,
+                InstallBehavior = DependencyInstallBehavior.AutoInstall,
+                IsOptional = false,
+            });
+        }
     }
 
     /// <summary>
@@ -346,11 +451,6 @@ public static class GenPatcherDependencyBuilder
 
                 // GenTool conflicts with GeneralsOnline clients (they have their own GenTool)
                 // Add conflict information but don't block - the resolver will handle this
-                break;
-
-            case "genl": // GenLauncher
-                // GenLauncher is a standalone launcher, requires any game installation
-                dependencies.Add(CreateZeroHour104Dependency());
                 break;
 
             case "gena": // GenAssist

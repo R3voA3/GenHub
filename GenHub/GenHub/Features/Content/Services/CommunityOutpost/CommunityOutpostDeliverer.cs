@@ -9,10 +9,13 @@ using System.Threading.Tasks;
 using GenHub.Core.Constants;
 using GenHub.Core.Interfaces.Common;
 using GenHub.Core.Interfaces.Content;
+using GenHub.Core.Interfaces.GameInstallations;
 using GenHub.Core.Interfaces.Manifest;
+using GenHub.Core.Interfaces.Storage;
 using GenHub.Core.Models.CommunityOutpost;
 using GenHub.Core.Models.Content;
 using GenHub.Core.Models.Enums;
+using GenHub.Core.Models.GameInstallations;
 using GenHub.Core.Models.Manifest;
 using GenHub.Core.Models.Results;
 using Microsoft.Extensions.Logging;
@@ -31,9 +34,55 @@ public class CommunityOutpostDeliverer(
    IDownloadService downloadService,
    IContentManifestPool manifestPool,
    CommunityOutpostManifestFactory manifestFactory,
+   IGameInstallationService installationService,
+   IUserSettingsService userSettingsService,
+   ICasPoolManager? casPoolManager,
+   AvifToTgaConverter avifConverter,
    ILogger<CommunityOutpostDeliverer> logger)
    : IContentDeliverer
 {
+    /// <summary>
+    /// Extracts the content code from the manifest metadata.
+    /// </summary>
+    private static string GetContentCodeFromManifest(ContentManifest manifest)
+    {
+        // Look for contentCode tag in metadata
+        var contentCodeTag = manifest.Metadata?.Tags?
+            .FirstOrDefault(t => t.StartsWith("contentCode:", StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(contentCodeTag))
+        {
+            return contentCodeTag["contentCode:".Length..];
+        }
+
+        return "unknown";
+    }
+
+    /// <summary>
+    /// Gets the installation path for a game installation.
+    /// </summary>
+    private static string? GetInstallationPath(IGameInstallation installation)
+    {
+        // For Zero Hour installations, use the installation path directly
+        // For Generals-only installations, use the Generals path
+        if (!string.IsNullOrEmpty(installation.InstallationPath))
+        {
+            return Path.GetDirectoryName(installation.InstallationPath);
+        }
+
+        if (!string.IsNullOrEmpty(installation.ZeroHourPath))
+        {
+            return Path.GetDirectoryName(installation.ZeroHourPath);
+        }
+
+        if (!string.IsNullOrEmpty(installation.GeneralsPath))
+        {
+            return Path.GetDirectoryName(installation.GeneralsPath);
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Extracts a 7z archive asynchronously using SharpCompress.
     /// </summary>
@@ -230,7 +279,20 @@ public class CommunityOutpostDeliverer(
                 return OperationResult<ContentManifest>.CreateFailure($"Extraction failed: {ex.Message}");
             }
 
-            // Step 3: Create manifests using the factory
+            // Step 2.5: Repack if needed (e.g. for Hotkeys)
+            await RepackContentIfNeededAsync(
+                packageManifest,
+                extractPath,
+                cancellationToken);
+
+            // Step 2.6: Download and merge AutoInstall dependencies directly into extracted content
+            // This creates ONE manifest with ALL files - CAS will deduplicate automatically
+            await DownloadAndMergeDependenciesSimpleAsync(
+                packageManifest,
+                extractPath,
+                cancellationToken);
+
+            // Step 3: Create manifests using the factory (now includes merged dependency files)
             progress?.Report(new ContentAcquisitionProgress
             {
                 Phase = ContentAcquisitionPhase.Copying,
@@ -267,6 +329,19 @@ public class CommunityOutpostDeliverer(
             logger.LogInformation(
                 "Registering {Count} manifest(s) to pool",
                 manifests.Count);
+
+            // For GameClient content, ensure InstallationPoolRootPath is set before storing
+            // This prevents content from being stored in the wrong CAS pool (e.g., C: drive instead of game-adjacent pool)
+            var hasGameClientManifest = manifests.Any(m => m.ContentType == ContentType.GameClient);
+            if (hasGameClientManifest)
+            {
+                await EnsureInstallationPoolPathAsync(cancellationToken);
+
+                // CRITICAL: Force the CAS pool manager to reinitialize the Installation pool
+                // after we've updated the path in settings. Without this, the pool manager
+                // will still use the old (or non-existent) Installation pool.
+                casPoolManager?.ReinitializeInstallationPool();
+            }
 
             foreach (var manifest in manifests)
             {
@@ -414,4 +489,277 @@ public class CommunityOutpostDeliverer(
             }
         });
     }
-}
+
+    /// <summary>
+    /// Repacks extracted content into a single .big file if required by metadata.
+    /// </summary>
+    private async Task RepackContentIfNeededAsync(
+        ContentManifest manifest,
+        string extractPath,
+        CancellationToken cancellationToken)
+    {
+        var contentCode = GetContentCodeFromManifest(manifest);
+        var metadata = GenPatcherContentRegistry.GetMetadata(contentCode);
+
+        if (metadata.RequiresRepacking && !string.IsNullOrEmpty(metadata.OutputFilename))
+        {
+            logger.LogInformation(
+                "Repacking content for {ContentCode} into {OutputFilename}",
+                contentCode,
+                metadata.OutputFilename);
+
+            // Create a temporary directory for the packed file
+            var packDir = Path.Combine(Directory.GetParent(extractPath)!.FullName, "packed");
+            Directory.CreateDirectory(packDir);
+            var destinationPath = Path.Combine(packDir, metadata.OutputFilename);
+
+            // Pack the files
+            // GenPatcher archives often extract to nested ZH\BIG or CCG\BIG folders. We must pack the BIG folder contents,
+            // not the parent folder, to avoid embedding extra path prefixes inside the .big.
+            var bigDirectories = Directory.GetDirectories(extractPath, "BIG*", SearchOption.AllDirectories);
+            var packSource = extractPath;
+
+            if (bigDirectories.Length > 0)
+            {
+                bool IsUnder(string path, string folder)
+                {
+                    return path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Any(segment => segment.Equals(folder, StringComparison.OrdinalIgnoreCase));
+                }
+
+                bool EndsWithSegment(string path, string segment)
+                {
+                    return path.EndsWith(segment, StringComparison.OrdinalIgnoreCase);
+                }
+
+                var preferred = bigDirectories
+                    .FirstOrDefault(d => IsUnder(d, "ZH") && EndsWithSegment(d, "BIG EN"))
+                    ?? bigDirectories.FirstOrDefault(d => IsUnder(d, "ZH") && EndsWithSegment(d, "BIG"))
+                    ?? bigDirectories.FirstOrDefault(d => IsUnder(d, "CCG") && EndsWithSegment(d, "BIG EN"))
+                    ?? bigDirectories.FirstOrDefault(d => IsUnder(d, "CCG") && EndsWithSegment(d, "BIG"))
+                    ?? bigDirectories.First();
+
+                packSource = preferred;
+            }
+
+            // Convert AVIF files to TGA format before packing
+            // GenPatcher dat archives contain AVIF for compression, but the game requires TGA textures
+            var avifCount = Directory.GetFiles(packSource, "*.avif", SearchOption.AllDirectories).Length;
+            if (avifCount > 0)
+            {
+                logger.LogInformation(
+                    "Converting {Count} AVIF files to TGA format for game compatibility",
+                    avifCount);
+
+                var convertedCount = await avifConverter.ConvertDirectoryAsync(packSource, cancellationToken);
+                logger.LogInformation("Converted {Converted} AVIF files to TGA", convertedCount);
+            }
+
+            await BigFilePacker.PackAsync(packSource, destinationPath);
+
+            // Clear the ExtractPath and move the packed file there
+            // This ensures the manifest factory only sees the packed file
+            Directory.Delete(extractPath, true);
+            Directory.CreateDirectory(extractPath);
+            File.Move(destinationPath, Path.Combine(extractPath, metadata.OutputFilename));
+
+            // Cleanup packDir
+            Directory.Delete(packDir, true);
+
+            logger.LogInformation("Repacking completed successfully");
+        }
+    }
+
+    /// <summary>
+    /// Ensures the InstallationPoolRootPath is set before storing GameClient content.
+    /// This prevents content from being stored in the wrong CAS pool.
+    /// </summary>
+    private async Task EnsureInstallationPoolPathAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // ALWAYS force installation detection and reset the path
+            // Even if a path is set, it might be stale (from before user deleted data)
+            // or point to the wrong installation
+            logger.LogInformation("Forcing installation detection to ensure correct InstallationPoolRootPath");
+            installationService.InvalidateCache();
+
+            // Get all installations (this will trigger detection if cache is empty)
+            var installationsResult = await installationService.GetAllInstallationsAsync(cancellationToken);
+            if (!installationsResult.Success || installationsResult.Data == null)
+            {
+                logger.LogWarning("Failed to get installations for CAS pool path resolution: {Error}", installationsResult.FirstError);
+                return;
+            }
+
+            var installations = installationsResult.Data.ToList();
+
+            if (installations.Count == 0)
+            {
+                logger.LogWarning("No installations detected - cannot set InstallationPoolRootPath");
+                return;
+            }
+
+            // If only one installation, use it
+            if (installations.Count == 1)
+            {
+                var installation = installations[0];
+                var installationPath = GetInstallationPath(installation);
+                if (!string.IsNullOrEmpty(installationPath))
+                {
+                    var casPoolPath = Path.Combine(installationPath, ".genhub-cas");
+                    logger.LogInformation("Auto-setting InstallationPoolRootPath to single installation: {Path}", casPoolPath);
+
+                    await userSettingsService.TryUpdateAndSaveAsync(s =>
+                    {
+                        s.CasConfiguration.InstallationPoolRootPath = casPoolPath;
+                        s.PreferredStorageInstallationId = installation.Id;
+                        s.MarkAsExplicitlySet(nameof(s.CasConfiguration.InstallationPoolRootPath));
+                        return true;
+                    });
+
+                    // Verify the setting was applied
+                    var updatedSettings = userSettingsService.Get();
+                    logger.LogInformation("Verified InstallationPoolRootPath is now: {Path}", updatedSettings.CasConfiguration.InstallationPoolRootPath);
+                    return;
+                }
+            }
+
+            // If multiple installations, prefer Steam over EA App
+            var preferredInstallation = installations.FirstOrDefault(i => i.InstallationType == GameInstallationType.Steam)
+                ?? installations.FirstOrDefault(i => i.InstallationType == GameInstallationType.EaApp)
+                ?? installations.FirstOrDefault();
+
+            if (preferredInstallation != null)
+            {
+                var installationPath = GetInstallationPath(preferredInstallation);
+                if (!string.IsNullOrEmpty(installationPath))
+                {
+                    var casPoolPath = Path.Combine(installationPath, ".genhub-cas");
+                    logger.LogInformation("Auto-setting InstallationPoolRootPath to preferred installation ({InstallationType}): {Path}", preferredInstallation.InstallationType, casPoolPath);
+
+                    await userSettingsService.TryUpdateAndSaveAsync(s =>
+                    {
+                        s.CasConfiguration.InstallationPoolRootPath = casPoolPath;
+                        s.PreferredStorageInstallationId = preferredInstallation.Id;
+                        s.MarkAsExplicitlySet(nameof(s.CasConfiguration.InstallationPoolRootPath));
+                        return true;
+                    });
+
+                    // Verify the setting was applied
+                    var updatedSettings = userSettingsService.Get();
+                    logger.LogInformation("Verified InstallationPoolRootPath is now: {Path}", updatedSettings.CasConfiguration.InstallationPoolRootPath);
+                }
+            }
+            else
+            {
+                logger.LogWarning("No valid installation found for CAS pool path resolution");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to ensure InstallationPoolRootPath is set");
+        }
+    }
+
+    /// <summary>
+    /// SIMPLE APPROACH: Downloads and merges AutoInstall dependencies into the main package directory.
+    /// Just extract each dependency and copy all files. CAS handles deduplication.
+    /// </summary>
+    private async Task DownloadAndMergeDependenciesSimpleAsync(
+        ContentManifest packageManifest,
+        string extractPath,
+        CancellationToken cancellationToken)
+    {
+        var autoInstallDeps = packageManifest.Dependencies
+            .Where(d => d.InstallBehavior == DependencyInstallBehavior.AutoInstall)
+            .ToList();
+
+        if (autoInstallDeps.Count == 0)
+        {
+            logger.LogDebug("No auto-install dependencies to merge");
+            return;
+        }
+
+        logger.LogInformation("Merging {Count} auto-install dependencies into package", autoInstallDeps.Count);
+
+        foreach (var dep in autoInstallDeps)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                // Extract content code from manifest ID (e.g., "1.10.communityoutpost.addon.hlenenglish" → "hlenenglish")
+                var manifestIdStr = dep.Id.Value;
+                var lastDotIndex = manifestIdStr.LastIndexOf('.');
+                if (lastDotIndex < 0)
+                {
+                    logger.LogWarning("Cannot extract content code from dependency ID: {Id}", manifestIdStr);
+                    continue;
+                }
+
+                var depContentCode = manifestIdStr.Substring(lastDotIndex + 1);
+                
+                // CRITICAL: Look up in registry to get the actual content code
+                // The manifest ID might have language suffixes (e.g., "hlenenglish")  
+                // but the actual file and registry use the base code (e.g., "hlen")
+                var depMetadata = GenPatcherContentRegistry.GetMetadata(depContentCode);
+                var actualContentCode = depMetadata.ContentCode ?? depContentCode;
+                
+                logger.LogInformation("Downloading and merging: {Name} (manifest code: {ManifestCode}, actual code: {ActualCode})", 
+                    dep.Name, depContentCode, actualContentCode);
+
+                // Download from https://legi.cc/patch/{actualCode}.dat (use actual content code!)
+                var depUrl = $"https://legi.cc/patch/{actualContentCode}.dat";
+                var tempDir = Path.Combine(Path.GetTempPath(), "GenHub", "DepMerge");
+                var depArchive = Path.Combine(tempDir, $"{actualContentCode}.dat");
+                Directory.CreateDirectory(tempDir);
+
+                var downloadResult = await DownloadWithMirrorFallbackAsync(depUrl, depArchive, cancellationToken);
+                if (!downloadResult.Success)
+                {
+                    logger.LogError("Failed to download {Name} from {Url}: {Error}", dep.Name, depUrl, downloadResult.FirstError);
+                    continue;
+                }
+
+                // Extract to temp directory
+                var depExtractPath = Path.Combine(tempDir, actualContentCode);
+                Directory.CreateDirectory(depExtractPath);
+                await ExtractSevenZipAsync(depArchive, depExtractPath, cancellationToken);
+
+                // Convert AVIF to TGA
+                await avifConverter.ConvertDirectoryAsync(depExtractPath, cancellationToken);
+
+                // Copy ALL files into main extractPath
+                var depFiles = Directory.GetFiles(depExtractPath, "*", SearchOption.AllDirectories);
+                logger.LogInformation("Copying {FileCount} files from {Name}", depFiles.Length, dep.Name);
+
+                foreach (var sourceFile in depFiles)
+                {
+                    var relativePath = Path.GetRelativePath(depExtractPath, sourceFile);
+                    var targetFile = Path.Combine(extractPath, relativePath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
+                    File.Copy(sourceFile, targetFile, overwrite: true);
+                }
+
+                // Cleanup
+                try
+                {
+                    File.Delete(depArchive);
+                    Directory.Delete(depExtractPath, recursive: true);
+                }
+                catch
+                {
+                    // Ignore
+                }
+
+                logger.LogInformation("Successfully merged {Name}", dep.Name);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to merge dependency {Name}", dep.Name);
+            }
+        }
+
+        logger.LogInformation("Finished merging dependencies into {Path}", extractPath);
+    }}

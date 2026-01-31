@@ -619,8 +619,8 @@ public class ContentStorageService : IContentStorageService
 
                 if (manifestFile.SourceType == ContentSourceType.ContentAddressable)
                 {
-                    // For ContentAddressable files, store in CAS by hash
-                    var casResult = await _casService.StoreContentAsync(sourcePath, null, cancellationToken);
+                    // For ContentAddressable files, store in CAS by hash with pool awareness
+                    var casResult = await _casService.StoreContentAsync(sourcePath, manifest.ContentType, null, cancellationToken);
                     if (!casResult.Success || string.IsNullOrEmpty(casResult.Data))
                     {
                         _logger.LogWarning(
@@ -642,7 +642,7 @@ public class ContentStorageService : IContentStorageService
                 {
                     // For other source types (ExtractedPackage, LocalFile, etc.), also store in CAS
                     // This ensures all files end up in CAS for proper validation and workspace resolution
-                    var casResult = await _casService.StoreContentAsync(sourcePath, null, cancellationToken);
+                    var casResult = await _casService.StoreContentAsync(sourcePath, manifest.ContentType, null, cancellationToken);
                     if (!casResult.Success || string.IsNullOrEmpty(casResult.Data))
                     {
                         _logger.LogWarning(
@@ -663,6 +663,7 @@ public class ContentStorageService : IContentStorageService
                 }
 
                 // After storing, all files become ContentAddressable since they're now in CAS
+                // Clear SourcePath for CAS-stored content so workspace preparation uses Hash instead
                 var updatedFile = new ManifestFile
                 {
                     RelativePath = manifestFile.RelativePath,
@@ -673,7 +674,7 @@ public class ContentStorageService : IContentStorageService
                     IsRequired = manifestFile.IsRequired,
                     IsExecutable = manifestFile.IsExecutable,
                     DownloadUrl = manifestFile.DownloadUrl,
-                    SourcePath = manifestFile.SourcePath,
+                    SourcePath = null, // Must be null for CAS content to ensure workspace uses Hash resolution
                     PatchSourceFile = manifestFile.PatchSourceFile,
                     PackageInfo = manifestFile.PackageInfo,
                     Permissions = manifestFile.Permissions,
