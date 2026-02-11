@@ -170,8 +170,8 @@ public class CasPoolManager : ICasPoolManager
             return;
         }
 
-        lock (_initLock)
-        {
+            lock (_initLock)
+            {
             if (_storages.ContainsKey(poolType))
             {
                 _logger.LogDebug("Pool {PoolType} already initialized (race condition prevented)", poolType);
@@ -179,43 +179,43 @@ public class CasPoolManager : ICasPoolManager
             }
 
             var rootPath = _poolResolver.GetPoolRootPath(poolType);
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            _logger.LogWarning("Cannot initialize {PoolType} pool: root path is not configured", poolType);
-            return;
-        }
+                if (string.IsNullOrWhiteSpace(rootPath))
+                {
+                    _logger.LogWarning("Cannot initialize {PoolType} pool: root path is not configured", poolType);
+                    return;
+                }
 
-        // Security Guard: Prevent initializing CAS in the application directory or an empty path
-        var appBaseDir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
-        var normalizedRootPath = Path.TrimEndingDirectorySeparator(rootPath);
+            // Security Guard: Prevent initializing CAS in the application directory or an empty path
+                var appBaseDir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+                var normalizedRootPath = Path.TrimEndingDirectorySeparator(rootPath);
 
-        if (normalizedRootPath.Equals(appBaseDir, StringComparison.OrdinalIgnoreCase) ||
-            normalizedRootPath.StartsWith(appBaseDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogError("Security Block: Attempted to initialize {PoolType} CAS pool at or inside the application directory: {Path}. This is not allowed.", poolType, rootPath);
-            return;
-        }
+                if (normalizedRootPath.Equals(appBaseDir, StringComparison.OrdinalIgnoreCase) ||
+                    normalizedRootPath.StartsWith(appBaseDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                _logger.LogError("Security Block: Attempted to initialize {PoolType} CAS pool at or inside the application directory: {Path}. This is not allowed.", poolType, rootPath);
+                    return;
+                }
 
-        // Create a configuration specific to this pool
-        var poolConfig = new CasConfiguration
-        {
-            CasRootPath = rootPath,
-            HashAlgorithm = _config.HashAlgorithm,
-            GcGracePeriod = _config.GcGracePeriod,
-            MaxCacheSizeBytes = _config.MaxCacheSizeBytes,
-            AutoGcInterval = _config.AutoGcInterval,
-            MaxConcurrentOperations = _config.MaxConcurrentOperations,
-            VerifyIntegrity = _config.VerifyIntegrity,
-            EnableAutomaticGc = _config.EnableAutomaticGc,
-        };
+            // Create a configuration specific to this pool
+                var poolConfig = new CasConfiguration
+                {
+                CasRootPath = rootPath,
+                HashAlgorithm = _config.HashAlgorithm,
+                GcGracePeriod = _config.GcGracePeriod,
+                MaxCacheSizeBytes = _config.MaxCacheSizeBytes,
+                AutoGcInterval = _config.AutoGcInterval,
+                MaxConcurrentOperations = _config.MaxConcurrentOperations,
+                VerifyIntegrity = _config.VerifyIntegrity,
+                EnableAutomaticGc = _config.EnableAutomaticGc,
+            };
 
-        var poolConfigOptions = Options.Create(poolConfig);
-        var storageLogger = _loggerFactory.CreateLogger<CasStorage>();
+                var poolConfigOptions = Options.Create(poolConfig);
+                var storageLogger = _loggerFactory.CreateLogger<CasStorage>();
 
-            var storage = new CasStorage(poolConfigOptions, storageLogger, _hashProvider);
-            _storages.TryAdd(poolType, storage);
+                var storage = new CasStorage(poolConfigOptions, storageLogger, _hashProvider);
+                _storages.TryAdd(poolType, storage);
 
-            _logger.LogInformation("Initialized {PoolType} CAS pool at {RootPath}", poolType, rootPath);
-        }
+                _logger.LogInformation("Initialized {PoolType} CAS pool at {RootPath}", poolType, rootPath);
+            }
     }
 }
