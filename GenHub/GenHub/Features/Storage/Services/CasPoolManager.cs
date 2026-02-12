@@ -170,44 +170,44 @@ public class CasPoolManager : ICasPoolManager
             return;
         }
 
-            lock (_initLock)
-            {
-            if (_storages.ContainsKey(poolType))
-            {
-                _logger.LogDebug("Pool {PoolType} already initialized (race condition prevented)", poolType);
-                return;
-            }
+        lock (_initLock)
+        {
+                if (_storages.ContainsKey(poolType))
+                {
+                    _logger.LogDebug("Pool {PoolType} already initialized (race condition prevented)", poolType);
+                    return;
+                }
 
-            var rootPath = _poolResolver.GetPoolRootPath(poolType);
+                var rootPath = _poolResolver.GetPoolRootPath(poolType);
                 if (string.IsNullOrWhiteSpace(rootPath))
                 {
                     _logger.LogWarning("Cannot initialize {PoolType} pool: root path is not configured", poolType);
                     return;
                 }
 
-            // Security Guard: Prevent initializing CAS in the application directory or an empty path
+                // Security Guard: Prevent initializing CAS in the application directory or an empty path
                 var appBaseDir = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
                 var normalizedRootPath = Path.TrimEndingDirectorySeparator(rootPath);
 
                 if (normalizedRootPath.Equals(appBaseDir, StringComparison.OrdinalIgnoreCase) ||
                     normalizedRootPath.StartsWith(appBaseDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 {
-                _logger.LogError("Security Block: Attempted to initialize {PoolType} CAS pool at or inside the application directory: {Path}. This is not allowed.", poolType, rootPath);
+                    _logger.LogError("Security Block: Attempted to initialize {PoolType} CAS pool at or inside the application directory: {Path}. This is not allowed.", poolType, rootPath);
                     return;
                 }
 
-            // Create a configuration specific to this pool
+                // Create a configuration specific to this pool
                 var poolConfig = new CasConfiguration
                 {
-                CasRootPath = rootPath,
-                HashAlgorithm = _config.HashAlgorithm,
-                GcGracePeriod = _config.GcGracePeriod,
-                MaxCacheSizeBytes = _config.MaxCacheSizeBytes,
-                AutoGcInterval = _config.AutoGcInterval,
-                MaxConcurrentOperations = _config.MaxConcurrentOperations,
-                VerifyIntegrity = _config.VerifyIntegrity,
-                EnableAutomaticGc = _config.EnableAutomaticGc,
-            };
+                    CasRootPath = rootPath,
+                    HashAlgorithm = _config.HashAlgorithm,
+                    GcGracePeriod = _config.GcGracePeriod,
+                    MaxCacheSizeBytes = _config.MaxCacheSizeBytes,
+                    AutoGcInterval = _config.AutoGcInterval,
+                    MaxConcurrentOperations = _config.MaxConcurrentOperations,
+                    VerifyIntegrity = _config.VerifyIntegrity,
+                    EnableAutomaticGc = _config.EnableAutomaticGc,
+                };
 
                 var poolConfigOptions = Options.Create(poolConfig);
                 var storageLogger = _loggerFactory.CreateLogger<CasStorage>();
