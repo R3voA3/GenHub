@@ -20,7 +20,7 @@
         ExtendClientAreaToDecorationsHint="True"
         ExtendClientAreaChromeHints="NoChrome"
         ExtendClientAreaTitleBarHeightHint="-1">
-    
+
     <Window.Resources>
         <conv:ContrastTextColorConverter x:Key="ContrastTextColorConverter" />
         <conv:ColorToBrushConverter x:Key="ColorToBrushConverter" />
@@ -48,19 +48,19 @@
             <Setter Property="Padding" Value="16" />
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
-        
+
         <!-- Section title -->
         <Style Selector="TextBlock.section-title">
             <Setter Property="FontSize" Value="15" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
-        
+
         <!-- Form field -->
         <Style Selector="StackPanel.form-field">
             <Setter Property="Margin" Value="0,0,0,12" />
         </Style>
-        
+
         <!-- Form label -->
         <Style Selector="TextBlock.form-label">
             <Setter Property="Margin" Value="0,0,0,6" />
@@ -68,7 +68,7 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="FontWeight" Value="Medium" />
         </Style>
-        
+
         <!-- Input fields -->
         <Style Selector="TextBox, ComboBox">
             <Setter Property="MinHeight" Value="36" />
@@ -76,7 +76,7 @@
             <Setter Property="BorderBrush" Value="#30FFFFFF" />
             <Setter Property="CornerRadius" Value="6" />
         </Style>
-        
+
         <!-- Compact color button -->
         <Style Selector="Button.color-btn">
             <Setter Property="Width" Value="28" />
@@ -86,7 +86,7 @@
             <Setter Property="CornerRadius" Value="14" />
             <Setter Property="Cursor" Value="Hand" />
         </Style>
-        
+
         <!-- Content action buttons -->
         <Style Selector="Button.btn-add">
             <Setter Property="Background" Value="#15FFFFFF" />
@@ -104,7 +104,7 @@
             <Setter Property="BorderBrush" Value="#4FC3F7" />
             <Setter Property="Foreground" Value="#000000" />
         </Style>
-        
+
         <Style Selector="Button.btn-remove">
             <Setter Property="Background" Value="#15FFFFFF" />
             <Setter Property="BorderBrush" Value="#FF5252" />
@@ -121,7 +121,7 @@
             <Setter Property="BorderBrush" Value="#FF5252" />
             <Setter Property="Foreground" Value="White" />
         </Style>
-        
+
         <!-- Content filter pills -->
         <Style Selector="Button.filter-pill">
             <Setter Property="Background" Value="#18FFFFFF" />
@@ -137,7 +137,7 @@
         <Style Selector="Button.filter-pill:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#25FFFFFF" />
         </Style>
-        
+
         <!-- Tab icon button style -->
         <Style Selector="Button.tab-icon-btn">
             <Setter Property="Width" Value="64" />
@@ -160,7 +160,7 @@
             <Setter Property="BorderBrush" Value="#FFFFFFFF" />
             <Setter Property="BorderThickness" Value="3" />
         </Style>
-        
+
         <!-- Scrollbar theming -->
         <Style Selector="ScrollBar">
             <Setter Property="Background" Value="#0F0F0F" />
@@ -195,9 +195,9 @@
                    HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch" />
         <!-- Header with profile preview and action buttons -->
-        <Border Grid.Row="0" 
-                Background="{Binding ColorValue, Converter={StaticResource ColorToBrushConverter}, Mode=OneWay}" 
-                CornerRadius="0,0,16,16" 
+        <Border Grid.Row="0"
+                Background="{Binding ColorValue, Converter={StaticResource ColorToBrushConverter}, Mode=OneWay}"
+                CornerRadius="0,0,16,16"
                 Height="70"
                 Opacity="0.7"
                 PointerPressed="OnHeaderPointerPressed">
@@ -229,8 +229,8 @@
 
                 <!-- Action Buttons -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Button Content="Cancel" 
-                            Command="{Binding ExecuteCancelCommand}"  
+                    <Button Content="Cancel"
+                            Command="{Binding ExecuteCancelCommand}"
                             Background="#40000000"
                             Foreground="White"
                             BorderBrush="#80FFFFFF"
@@ -241,8 +241,8 @@
                             FontSize="13"
                             HorizontalContentAlignment="Center"
                             VerticalContentAlignment="Center" />
-                    
-                    <Button Content="💾 Save" 
+
+                    <Button Content="💾 Save"
                             Command="{Binding SaveCommand}"
                             Background="White"
                             Foreground="#1976D2"
@@ -253,7 +253,7 @@
                             HorizontalContentAlignment="Center"
                             VerticalContentAlignment="Center"
                             ToolTip.Tip="Save profile changes (Ctrl+S)" />
-                    
+
                     <Button Command="{Binding RandomizeColorCommand}"
                             Background="#25000000"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ContrastTextColorConverter}, Mode=OneWay}"
@@ -272,9 +272,9 @@
         </Border>
 
         <!-- Tab Navigation Icons -->
-        <Border Grid.Row="1" 
+        <Border Grid.Row="1"
                 Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
-                Margin="12,12,12,0" 
+                Margin="12,12,12,0"
                 Padding="16"
                 CornerRadius="12">
             <Grid>
@@ -295,11 +295,11 @@
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ColorToBrushConverter}, Mode=OneWay}"
                             ToolTip.Tip="Content">
-                        <PathIcon Data="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z" 
+                        <PathIcon Data="M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z"
                                   Width="32" Height="32"
                                   Foreground="{Binding ColorValue, Converter={StaticResource ColorToBrushConverter}, Mode=OneWay}" />
                     </Button>
-                    
+
                     <!-- Profile Settings Tab Icon -->
                     <Button Grid.Column="3" Classes="tab-icon-btn"
                             Classes.selected="{Binding SelectedTabIndex, Converter={x:Static conv:TabIndexToVisibilityConverter.Instance}, ConverterParameter=1}"
@@ -317,7 +317,7 @@
                             </Border>
                         </Panel>
                     </Button>
-                    
+
                     <!-- Game Settings Tab Icon -->
                     <Button Grid.Column="5" Classes="tab-icon-btn"
                             Classes.selected="{Binding SelectedTabIndex, Converter={x:Static conv:TabIndexToVisibilityConverter.Instance}, ConverterParameter=2}"
@@ -340,29 +340,29 @@
 
         <!-- Tab Content Panels -->
         <Grid Grid.Row="2" Margin="12,12,12,12">
-            
+
             <!-- Content Tab Panel (Index 0) -->
-            <ScrollViewer IsVisible="{Binding SelectedTabIndex, Converter={StaticResource TabIndexToVisibilityConverter}, ConverterParameter=0}" 
+            <ScrollViewer IsVisible="{Binding SelectedTabIndex, Converter={StaticResource TabIndexToVisibilityConverter}, ConverterParameter=0}"
                           Padding="4"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="0">
-                    
+
                     <!-- Enabled Content Section -->
-                    <Border Classes="section-card" 
+                    <Border Classes="section-card"
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ThemeBorderConverter}, Mode=OneWay}">
                         <StackPanel>
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Grid.Column="0" Classes="section-title" Text="Enabled Content" Margin="0" />
-                                <Button Grid.Column="1" Content="⟳ Refresh" 
+                                <Button Grid.Column="1" Content="⟳ Refresh"
                                         Command="{Binding LoadAvailableContentCommand}"
                                         Background="Transparent"
                                         Padding="8,4"
                                         FontSize="11"
                                         VerticalAlignment="Top" />
                             </Grid>
-                            
+
                             <!-- Warning if no content -->
                             <Border Background="#30FF9800" CornerRadius="6" Padding="12" Margin="0,4,0,8"
                                     IsVisible="{Binding EnabledContent.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}">
@@ -372,7 +372,7 @@
                                                FontSize="12" Opacity="0.9" TextWrapping="Wrap" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Border>
-                            
+
                             <!-- Enabled content list -->
                             <ItemsControl ItemsSource="{Binding EnabledContent}">
                                 <ItemsControl.ItemsPanel>
@@ -410,14 +410,14 @@
                             </ItemsControl>
                         </StackPanel>
                     </Border>
-                    
+
                     <!-- Add Content Section -->
                     <Border Classes="section-card"
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ThemeBorderConverter}, Mode=OneWay}">
                         <StackPanel>
                             <TextBlock Classes="section-title" Text="Add Content" />
-                            
+
                             <!-- Content type filter pills -->
                             <WrapPanel Margin="0,0,0,12" HorizontalAlignment="Center">
                                 <Button Classes="filter-pill" Margin="0,0,8,8"
@@ -429,7 +429,7 @@
                                         <TextBlock Text="Installation" FontSize="12" />
                                     </StackPanel>
                                 </Button>
-                                
+
                                 <Button Classes="filter-pill" Margin="0,0,8,8"
                                         Classes.selected="{Binding SelectedContentType, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ContentType.GameClient}}"
                                         Command="{Binding SelectContentTypeFilterCommand}"
@@ -439,7 +439,7 @@
                                         <TextBlock Text="Executable" FontSize="12" />
                                     </StackPanel>
                                 </Button>
-                                
+
                                 <Button Classes="filter-pill" Margin="0,0,8,8"
                                         Classes.selected="{Binding SelectedContentType, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ContentType.Mod}}"
                                         Command="{Binding SelectContentTypeFilterCommand}"
@@ -449,7 +449,7 @@
                                         <TextBlock Text="Mods" FontSize="12" />
                                     </StackPanel>
                                 </Button>
-                                
+
                                 <Button Classes="filter-pill" Margin="0,0,8,8"
                                         Classes.selected="{Binding SelectedContentType, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ContentType.MapPack}}"
                                         Command="{Binding SelectContentTypeFilterCommand}"
@@ -459,7 +459,7 @@
                                         <TextBlock Text="Maps" FontSize="12" />
                                     </StackPanel>
                                 </Button>
-                                
+
                                 <Button Classes="filter-pill" Margin="0,0,8,8"
                                         Classes.selected="{Binding SelectedContentType, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ContentType.Patch}}"
                                         Command="{Binding SelectContentTypeFilterCommand}"
@@ -469,7 +469,7 @@
                                         <TextBlock Text="Patches" FontSize="12" />
                                     </StackPanel>
                                 </Button>
-                                
+
                                 <Button Classes="filter-pill" Margin="0,0,8,8"
                                         Classes.selected="{Binding SelectedContentType, Converter={x:Static ObjectConverters.Equal}, ConverterParameter={x:Static models:ContentType.Addon}}"
                                         Command="{Binding SelectContentTypeFilterCommand}"
@@ -480,16 +480,16 @@
                                     </StackPanel>
                                 </Button>
                             </WrapPanel>
-                            
+
                             <!-- Add Local Content Button -->
                             <Button Classes="filter-pill" Content="📁 Add Local"
                                     Command="{Binding AddLocalContentCommand}"
                                     ToolTip.Tip="Add content from a local folder"
                                     HorizontalAlignment="Left"
                                     Margin="0,0,0,12" />
-                            
+
                             <!-- Available content list -->
-                            <Border Background="#0A000000" BorderBrush="#20FFFFFF" BorderThickness="1" 
+                            <Border Background="#0A000000" BorderBrush="#20FFFFFF" BorderThickness="1"
                                     CornerRadius="6" Padding="8" MinHeight="120">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <ItemsControl ItemsSource="{Binding AvailableContent}">
@@ -517,17 +517,17 @@
                                                                 </Border>
                                                             </WrapPanel>
                                                         </StackPanel>
-                                                        
+
                                                         <!-- Delete button - always visible -->
-                                                        <Button Grid.Column="1" 
-                                                                Content="🗑️" 
-                                                                Background="#C62828" 
+                                                        <Button Grid.Column="1"
+                                                                Content="🗑️"
+                                                                Background="#C62828"
                                                                 Foreground="White"
-                                                                CornerRadius="3" 
-                                                                Padding="6,3" 
+                                                                CornerRadius="3"
+                                                                Padding="6,3"
                                                                 Margin="0,0,6,0"
-                                                                FontSize="11" 
-                                                                FontWeight="SemiBold" 
+                                                                FontSize="11"
+                                                                FontWeight="SemiBold"
                                                                 Cursor="Hand"
                                                                 VerticalAlignment="Center"
                                                                 ToolTip.Tip="Delete this downloaded content from storage (does not affect game installations)"
@@ -539,7 +539,7 @@
                                                                 </Style>
                                                             </Button.Styles>
                                                         </Button>
-                                                        
+
                                                         <Button Grid.Column="2" Content="+ Add" Classes="btn-add"
                                                                 Command="{Binding $parent[ItemsControl].((vm:GameProfileSettingsViewModel)DataContext).EnableContentCommand}"
                                                                 CommandParameter="{Binding}"
@@ -553,53 +553,53 @@
                             </Border>
                         </StackPanel>
                     </Border>
-                    
+
                 </StackPanel>
             </ScrollViewer>
-            
+
             <!-- Profile Settings Tab Panel (Index 1) -->
-            <ScrollViewer IsVisible="{Binding SelectedTabIndex, Converter={StaticResource TabIndexToVisibilityConverter}, ConverterParameter=1}" 
+            <ScrollViewer IsVisible="{Binding SelectedTabIndex, Converter={StaticResource TabIndexToVisibilityConverter}, ConverterParameter=1}"
                           Padding="4"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Spacing="0">
-                    
+
                     <!-- Basic Info Section -->
                     <Border Classes="section-card"
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ThemeBorderConverter}, Mode=OneWay}">
                         <StackPanel>
                             <TextBlock Classes="section-title" Text="Basic Information" />
-                            
+
                             <StackPanel Classes="form-field">
                                 <TextBlock Classes="form-label" Text="Profile Name" />
-                                <TextBox Text="{Binding Name, Mode=TwoWay}" 
+                                <TextBox Text="{Binding Name, Mode=TwoWay}"
                                          Watermark="Enter profile name" />
                             </StackPanel>
 
                             <StackPanel Classes="form-field">
                                 <TextBlock Classes="form-label" Text="Description" />
-                                <TextBox Text="{Binding Description, Mode=TwoWay}" 
-                                         Watermark="Optional description" 
-                                         Height="50" 
-                                         AcceptsReturn="True" 
+                                <TextBox Text="{Binding Description, Mode=TwoWay}"
+                                         Watermark="Optional description"
+                                         Height="50"
+                                         AcceptsReturn="True"
                                          TextWrapping="Wrap" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
-                    
+
                     <!-- Icon & Cover Section -->
                     <Border Classes="section-card"
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ThemeBorderConverter}, Mode=OneWay}">
                         <StackPanel>
                             <TextBlock Classes="section-title" Text="Icon &amp; Cover" />
-                            
+
                             <!-- Icon Selection -->
                             <StackPanel Classes="form-field">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Classes="form-label" Text="Profile Icon" />
-                                    <Button Grid.Column="1" Content="Browse..." 
+                                    <Button Grid.Column="1" Content="Browse..."
                                             Command="{Binding BrowseForCustomIconCommand}"
                                             Background="#15FFFFFF"
                                             Padding="12,4"
@@ -616,7 +616,7 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Width="70" Height="70" 
+                                                <Border Width="70" Height="70"
                                                         Margin="0,0,8,8"
                                                         Padding="4"
                                                         CornerRadius="8"
@@ -638,7 +638,7 @@
                                                             Cursor="Hand"
                                                             Padding="0"
                                                             BorderThickness="0">
-                                                        <Image Source="{Binding Path, Converter={StaticResource StringToImageConverter}}" 
+                                                        <Image Source="{Binding Path, Converter={StaticResource StringToImageConverter}}"
                                                                Stretch="Uniform" />
                                                     </Button>
                                                 </Border>
@@ -647,12 +647,12 @@
                                     </ItemsControl>
                                 </ScrollViewer>
                             </StackPanel>
-                            
+
                             <!-- Cover Selection -->
                             <StackPanel Classes="form-field">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Classes="form-label" Text="Profile Cover" />
-                                    <Button Grid.Column="1" Content="Browse..." 
+                                    <Button Grid.Column="1" Content="Browse..."
                                             Command="{Binding BrowseForCustomCoverCommand}"
                                             Background="#15FFFFFF"
                                             Padding="12,4"
@@ -669,7 +669,7 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Width="180" Height="120" 
+                                                <Border Width="180" Height="120"
                                                         Margin="0,0,12,8"
                                                         Padding="4"
                                                         CornerRadius="8"
@@ -691,7 +691,7 @@
                                                             Cursor="Hand"
                                                             Padding="0"
                                                             BorderThickness="0">
-                                                        <Image Source="{Binding Path, Converter={StaticResource StringToImageConverter}}" 
+                                                        <Image Source="{Binding Path, Converter={StaticResource StringToImageConverter}}"
                                                                Stretch="UniformToFill" />
                                                     </Button>
                                                 </Border>
@@ -702,14 +702,14 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
-                    
+
                     <!-- Launch Options Section -->
                     <Border Classes="section-card"
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
                             BorderBrush="{Binding ColorValue, Converter={StaticResource ThemeBorderConverter}, Mode=OneWay}">
                         <StackPanel>
                             <TextBlock Classes="section-title" Text="Launch Options" />
-                            
+
                             <StackPanel Classes="form-field">
                                 <TextBlock Classes="form-label" Text="Workspace Strategy" />
                                 <ComboBox ItemsSource="{x:Static vm:GameProfileSettingsViewModel.AvailableWorkspaceStrategies}"
@@ -743,14 +743,14 @@
 
                             <StackPanel Classes="form-field">
                                 <TextBlock Classes="form-label" Text="Command Line Arguments" />
-                                <TextBox Text="{Binding CommandLineArguments, Mode=TwoWay}" 
-                                         Watermark="-win -quicklaunch" />
+                                <TextBox Text="{Binding CommandLineArguments, Mode=TwoWay}"
+                                         Watermark="-win -quickstart" />
                                 <TextBlock Text="Optional arguments passed to the game executable"
                                            FontSize="11" Opacity="0.6" Margin="0,4,0,0" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
-                    
+
                     <!-- Theme Section -->
                     <Border Classes="section-card"
                             Background="{Binding ColorValue, Converter={StaticResource ThemeBackgroundConverter}, Mode=OneWay}"
@@ -793,12 +793,12 @@
                             </WrapPanel>
                         </StackPanel>
                     </Border>
-                    
+
                 </StackPanel>
             </ScrollViewer>
-            
+
             <!-- Game Settings Tab Panel (Index 2) -->
-            <ScrollViewer IsVisible="{Binding SelectedTabIndex, Converter={StaticResource TabIndexToVisibilityConverter}, ConverterParameter=2}" 
+            <ScrollViewer IsVisible="{Binding SelectedTabIndex, Converter={StaticResource TabIndexToVisibilityConverter}, ConverterParameter=2}"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <views:GameSettingsView DataContext="{Binding GameSettingsViewModel}" />
@@ -825,18 +825,18 @@
                         <TextBlock Text="📁" FontSize="24" VerticalAlignment="Center" />
                         <TextBlock Text="Add Local Content" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </StackPanel>
-                    
+
                     <!-- Selected Folder -->
                     <StackPanel Spacing="6">
                         <TextBlock Text="Selected Folder" FontSize="12" Opacity="0.8" />
                         <Border Background="#15FFFFFF" CornerRadius="6" Padding="10,8">
-                            <TextBlock Text="{Binding LocalContentDirectoryPath}" 
-                                       FontSize="11" 
+                            <TextBlock Text="{Binding LocalContentDirectoryPath}"
+                                       FontSize="11"
                                        TextTrimming="CharacterEllipsis"
                                        ToolTip.Tip="{Binding LocalContentDirectoryPath}" />
                         </Border>
                     </StackPanel>
-                    
+
                     <!-- Content Name -->
                     <StackPanel Spacing="6">
                         <TextBlock Text="Content Name" FontSize="12" Opacity="0.8" />
@@ -844,7 +844,7 @@
                                  Watermark="Enter a name for this content"
                                  MinHeight="36" />
                     </StackPanel>
-                    
+
                     <!-- Content Type -->
                     <StackPanel Spacing="6">
                         <TextBlock Text="Content Type" FontSize="12" Opacity="0.8" />
@@ -861,7 +861,7 @@
                         <TextBlock Text="Publisher will be set to 'GenHub (Local)' for local content"
                                    FontSize="10" Opacity="0.6" FontStyle="Italic" />
                     </StackPanel>
-                    
+
                     <!-- Action Buttons -->
                     <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,8,0,0">
                         <Button Grid.Column="1" Content="Cancel"
@@ -887,9 +887,9 @@
         </Border>
 
         <!-- Loading overlay -->
-        <Border Grid.RowSpan="3" 
+        <Border Grid.RowSpan="3"
                 IsVisible="{Binding IsInitializing}"
-                Background="#DD000000" 
+                Background="#DD000000"
                 ZIndex="1001">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
                 <ProgressBar IsIndeterminate="True" Width="180" Height="4"/>
@@ -920,8 +920,8 @@
         </Border>
 
         <!-- Notifications overlay -->
-        <notifications:NotificationContainerView Grid.RowSpan="3" 
-                                               DataContext="{Binding NotificationManager}" 
+        <notifications:NotificationContainerView Grid.RowSpan="3"
+                                               DataContext="{Binding NotificationManager}"
                                                ZIndex="2000" />
     </Grid>
     </Border>
